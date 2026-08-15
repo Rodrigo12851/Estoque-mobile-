@@ -1713,7 +1713,7 @@ export default function App() {
     const marcaDigitada = cadMarca.trim();
     const categoriaDigitada = cadCategoria.trim();
 
-    // MODO DONA DO APP (Alimentação direta do Banco de Dados Master / Catálogo Geral)
+    // MODO DONA DO APLICATIVO (Cadastro no Banco de Dados Master / Catálogo Geral)
     if (perfilAtivo === 'dona_app') {
       if (!codigoDigitado || !nomeDigitado) {
         setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha o Código de Barras e o Nome do Produto!</span>);
@@ -1759,7 +1759,7 @@ export default function App() {
     const precoDigitado = parseFloat(cadPreco);
 
     if (!codigoDigitado || !nomeDigitado || isNaN(qtdDigitada) || !valDigitada || isNaN(precoDigitado)) {
-      setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha os campos obrigatórios!</span>);
+      setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha todos os campos obrigatórios (Código, Nome, Quantidade, Validade e Preço)!</span>);
       return;
     }
 
@@ -1770,7 +1770,7 @@ export default function App() {
       codigo: codigoDigitado,
       nome: nomeDigitado,
       marca: marcaDigitada,
-      categoria: categoriaDigitada,
+      categoria: categoriaDigitada || 'Geral',
       unidade_medida: 'un',
       imagem: fotoTemp,
       descricao: nomeDigitado,
@@ -1785,7 +1785,7 @@ export default function App() {
     localStorage.setItem('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
     salvarProdutoCatalogoFirestore(dadosGlobal);
 
-    // Update Store Inventory
+    // Update Selected Store Inventory
     let novoEstoque = [...estoque];
     if (codigoEditando) {
       novoEstoque = novoEstoque.filter(
@@ -1836,7 +1836,7 @@ export default function App() {
     setEstoque(novoEstoque);
     localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
     salvarItemEstoqueFirestore(itemSalvar, supermercadoAtual);
-    setMsgCad(<span style={{ color: 'var(--sucesso)' }}>✅ Salvo com sucesso!</span>);
+    setMsgCad(<span style={{ color: 'var(--sucesso)' }}>✅ Salvo com sucesso no estoque de {nomeSupermercadoAtivo}!</span>);
     notificarSincronizacao();
 
     setTimeout(() => {
@@ -2382,12 +2382,13 @@ export default function App() {
                 trocarPerfilAtivo('caixa', opId);
               }
             }}
+            title="Alternar Perfil Operacional"
           >
             <optgroup label="👑 Super Administração">
               <option value="dona_app">👑 Dona do Aplicativo (Acesso Total)</option>
             </optgroup>
             <optgroup label="🏢 Administração do Supermercado">
-              <option value="admin_loja">🏢 Dono do Supermercado / Gerente ({nomeSupermercadoAtivo})</option>
+              <option value="admin_loja">🏢 Gerência / Dono ({nomeSupermercadoAtivo})</option>
             </optgroup>
             {listaOperadores.length > 0 && (
               <optgroup label="👤 Operadores de Caixa & Equipe">
@@ -2399,6 +2400,11 @@ export default function App() {
               </optgroup>
             )}
           </select>
+        </div>
+
+        <div className="status-sync-topo" title="Status de Sincronização em Tempo Real">
+          <span className="sync-dot-live" style={{ background: isOnline ? '#22c55e' : '#f59e0b' }}></span>
+          <span>{isOnline ? 'Online • Firebase Ativo' : 'Offline (Local)'}</span>
         </div>
       </div>
 
@@ -3893,6 +3899,7 @@ export default function App() {
                 👑 <b>Modo Dona do Aplicativo:</b> Cadastro direto no Banco de Dados Geral (Catálogo Master). Os supermercados poderão utilizar este item automaticamente ao ler o código de barras.
               </div>
             )}
+
             <div className="grupo-input">
               <label className="rotulo-campo">Código de Barras (EAN / GTIN)</label>
               <div className="linha-input">
@@ -3983,7 +3990,7 @@ export default function App() {
               </select>
             </div>
 
-            {/* CAMPOS EXCLUSIVOS DO ESTOQUE DA LOJA (Ocultos no Modo Dona do App) */}
+            {/* CAMPOS DO ESTOQUE DA LOJA */}
             {perfilAtivo !== 'dona_app' && (
               <>
                 <div className="grupo-input">
