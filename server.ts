@@ -23,72 +23,80 @@ async function startServer() {
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        return res.status(500).json({ error: "GEMINI_API_KEY não configurada no servidor." });
+        return res.status(200).json({ error: "fallback_local", message: "GEMINI_API_KEY não configurada. Usando OCR local." });
       }
 
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          },
-        },
-      });
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: base64Data,
-              },
-            },
-            {
-              text: "Analise esta foto de embalagem ou produto de supermercado. Identifique o NOME DO PRODUTO (marca, tipo e peso/volume, ex: 'Café Pilão Tradicional 500g'), a CATEGORIA mais adequada, o LOTE (ex: P120526, L123) e a DATA DE VALIDADE (VAL, VENC, EXP) no formato YYYY-MM-DD. Se houver código de barras numérico impresso visível, identifique-o também.",
-            },
-          ],
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              nomeProduto: {
-                type: Type.STRING,
-                description: "Nome completo do produto com marca e peso/volume (ex: Arroz Tio João 5kg)",
-              },
-              categoria: {
-                type: Type.STRING,
-                description: "Categoria de supermercado do produto (ex: Mercearia / Grãos & Cereais, Laticínios & Frios, Bebidas Não Alcoólicas, Limpeza Doméstica, etc.)",
-              },
-              lote: {
-                type: Type.STRING,
-                description: "O número/código do lote extraído (ex: P120526 ou L12345).",
-              },
-              validade: {
-                type: Type.STRING,
-                description: "A data de validade extraída no formato YYYY-MM-DD (ex: 2026-11-08).",
-              },
-              codigoBarras: {
-                type: Type.STRING,
-                description: "Número do código de barras se visível na imagem.",
-              },
-              textoCompleto: {
-                type: Type.STRING,
-                description: "Resumo do texto lido da foto.",
-              },
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
             },
           },
-        },
-      });
+        });
 
-      const jsonText = response.text || "{}";
-      const result = JSON.parse(jsonText);
-      return res.json(result);
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: base64Data,
+                },
+              },
+              {
+                text: "Analise esta foto de embalagem ou produto de supermercado. Identifique o NOME DO PRODUTO (marca, tipo e peso/volume, ex: 'Café Pilão Tradicional 500g'), a CATEGORIA mais adequada, o LOTE (ex: P120526, L123) e a DATA DE VALIDADE (VAL, VENC, EXP) no formato YYYY-MM-DD. Se houver código de barras numérico impresso visível, identifique-o também.",
+              },
+            ],
+          },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                nomeProduto: {
+                  type: Type.STRING,
+                  description: "Nome completo do produto com marca e peso/volume (ex: Arroz Tio João 5kg)",
+                },
+                categoria: {
+                  type: Type.STRING,
+                  description: "Categoria de supermercado do produto (ex: Mercearia / Grãos & Cereais, Laticínios & Frios, Bebidas Não Alcoólicas, Limpeza Doméstica, etc.)",
+                },
+                lote: {
+                  type: Type.STRING,
+                  description: "O número/código do lote extraído (ex: P120526 ou L12345).",
+                },
+                validade: {
+                  type: Type.STRING,
+                  description: "A data de validade extraída no formato YYYY-MM-DD (ex: 2026-11-08).",
+                },
+                codigoBarras: {
+                  type: Type.STRING,
+                  description: "Número do código de barras se visível na imagem.",
+                },
+                textoCompleto: {
+                  type: Type.STRING,
+                  description: "Resumo do texto lido da foto.",
+                },
+              },
+            },
+          },
+        });
+
+        const jsonText = response.text || "{}";
+        const result = JSON.parse(jsonText);
+        return res.json(result);
+      } catch (gemErr: any) {
+        // Quota 429 or network issue - fallback seamlessly to local OCR
+        const isQuota = gemErr?.status === "RESOURCE_EXHAUSTED" || (gemErr?.message && gemErr.message.includes("429"));
+        if (!isQuota) {
+          console.info("OCR Gemini indisponível, acionando OCR local do navegador.");
+        }
+        return res.status(200).json({ error: "fallback_local", message: "Acionando OCR local" });
+      }
     } catch (err: any) {
-      console.warn("Aviso no OCR Gemini, acionando leitor local:", err?.message || err);
       return res.status(200).json({ error: "fallback_local", message: "Acionando OCR local" });
     }
   });
@@ -266,10 +274,46 @@ async function startServer() {
           foto: "https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=600&q=80",
         },
         "7891037000021": {
-          nome: "Lava Roupas em Pó Omo Lavagem Perfeita Caixa 2.2kg",
+          nome: "Lava Roupas em Pó OMO Lavagem Perfeita Caixa 2.2kg",
           marca: "OMO",
           cat: "Limpeza Doméstica",
           foto: "https://images.unsplash.com/photo-1585832770485-e68a5fc88280?auto=format&fit=crop&w=600&q=80",
+        },
+        "7896005800114": {
+          nome: "Café Torrado e Moído Pilão Tradicional Almofada 500g",
+          marca: "Pilão",
+          cat: "Mercearia / Grãos & Cereais",
+          foto: "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=600&q=80",
+        },
+        "7896006700017": {
+          nome: "Arroz Branco Tipo 1 Tio João Pacote 5kg",
+          marca: "Tio João",
+          cat: "Mercearia / Grãos & Cereais",
+          foto: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80",
+        },
+        "7896006700024": {
+          nome: "Feijão Carioca Tipo 1 Camil Pacote 1kg",
+          marca: "Camil",
+          cat: "Mercearia / Grãos & Cereais",
+          foto: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80",
+        },
+        "7896090120012": {
+          nome: "Óleo de Soja Refinado Liza Pet 900ml",
+          marca: "Liza",
+          cat: "Mercearia / Grãos & Cereais",
+          foto: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=600&q=80",
+        },
+        "7896004000010": {
+          nome: "Açúcar Refinado União Pacote 1kg",
+          marca: "União",
+          cat: "Mercearia / Grãos & Cereais",
+          foto: "https://images.unsplash.com/photo-1581447109200-bf276912b641?auto=format&fit=crop&w=600&q=80",
+        },
+        "7891000248706": {
+          nome: "Leite Condensado Moça Nestlé Lata 395g",
+          marca: "Nestlé",
+          cat: "Laticínios & Frios",
+          foto: "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80",
         },
       };
 
@@ -288,13 +332,25 @@ async function startServer() {
 
       // 2. Direct lookup on Cosmos Bluesoft website (https://cosmos.bluesoft.com.br/)
       const cosmosDirect = await consultarBluesoftCosmosDireto(cleanEan);
-      if (cosmosDirect && cosmosDirect.nomeProduto) {
+      if (cosmosDirect && cosmosDirect.nomeProduto && cosmosDirect.nomeProduto.length > 2) {
         nomeProduto = cosmosDirect.nomeProduto;
         marca = cosmosDirect.marca || "";
         categoria = cosmosDirect.categoria || "Mercearia / Grãos & Cereais";
         fotoUrl = cosmosDirect.fotoUrl || "";
         descricao = cosmosDirect.descricao || "";
         fonte = "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)";
+
+        // If Cosmos Bluesoft returned complete product name and photo, return immediately (zero Gemini quota consumed!)
+        if (nomeProduto && (fotoUrl || marca)) {
+          return res.json({
+            nomeProduto,
+            marca,
+            categoria,
+            fotoUrl,
+            descricao,
+            fonte,
+          });
+        }
       }
 
       // 3. Query Open Food Facts for auxiliary metadata if needed
@@ -318,107 +374,81 @@ async function startServer() {
           }
         }
       } catch (e) {
-        console.warn("Open Food Facts fetch error/timeout:", e);
+        // Open Food Facts fetch timeout
       }
 
-      // 4. Use Gemini 3.7 Flash with Google Search Grounding prioritizing Cosmos Bluesoft
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (apiKey) {
-        try {
-          const ai = new GoogleGenAI({
-            apiKey,
-            httpOptions: {
-              headers: {
-                "User-Agent": "aistudio-build",
-              },
-            },
-          });
-
-          const cosmosContext = cosmosDirect
-            ? `Dados preliminares extraídos do Cosmos Bluesoft: Nome='${cosmosDirect.nomeProduto}', Marca='${cosmosDirect.marca}', Categoria='${cosmosDirect.categoria}', Imagem='${cosmosDirect.fotoUrl}', Descrição='${cosmosDirect.descricao}'.`
-            : "";
-
-          const offContext = rawOffData
-            ? `Dados Open Food Facts: Nome='${rawOffData.product_name || rawOffData.product_name_pt}', Marca='${rawOffData.brands}', Peso/Qtd='${rawOffData.quantity}'.`
-            : "";
-
-          const response = await ai.models.generateContent({
-            model: "gemini-3.7-flash",
-            contents: `Consulte e extraia os dados oficiais do produto com o código de barras EAN/GTIN ${cleanEan} pesquisando no banco de dados do Cosmos Bluesoft (https://cosmos.bluesoft.com.br/produtos/${cleanEan} ou busca 'site:cosmos.bluesoft.com.br ${cleanEan}').
-${cosmosContext}
-${offContext}
-
-Regras para os dados retornados:
-1. 'nomeProduto': Escreva o nome COMPLETO, OFICIAL e ESTRUTURADO para cadastro profissional de supermercado no padrão: [Tipo do Produto] + [Marca] + [Linha/Sabor] + [Tipo de Embalagem e Peso/Volume].
-   Exemplos reais:
-   - 'Achocolatado em Pó Nestlé Nescau 2.0 Lata 370g'
-   - 'Achocolatado em Pó Nestlé Nescau Lata 200g'
-   - 'Leite UHT Integral Piracanjuba Caixinha 1L'
-   - 'Creme de Leite Leve Nestlé Caixinha 200g'
-   - 'Refrigerante Coca-Cola Sabor Original Garrafa PET 2L'
-   - 'Lava Roupas em Pó OMO Lavagem Perfeita Caixa 2.2kg'
-   - 'Biscoito Recheado Chocolate Nestlé Passatempo Pacote 130g'
-   - 'Detergente Líquido Lava Louças Minuano Marine Frasco 500ml'
-
-2. 'marca': Nome exato da marca (Ex: 'Nestlé', 'Piracanjuba', 'Coca-Cola', 'OMO', 'Minuano').
-3. 'categoria': Escolha uma das categorias de supermercado: 'Mercearia / Grãos & Cereais', 'Laticínios & Frios', 'Bebidas Não Alcoólicas', 'Biscoitos & Snacks', 'Limpeza Doméstica', 'Higiene & Perfumaria', 'Padaria & Confeitaria', 'Carnes & Congelados'.
-4. 'fotoUrl': URL da foto oficial do produto (preferencialmente a imagem do produto cadastrada no Cosmos Bluesoft CDN 'cdn-cosmos.bluesoft.com.br' ou imagem oficial de estúdio com fundo branco). Se encontrar imagem no Cosmos Bluesoft, use-a.
-5. 'descricao': Breve descrição do produto se disponível no Cosmos Bluesoft.
-
-Retorne OBRIGATORIAMENTE em JSON válido com as chaves: "nomeProduto", "marca", "categoria", "fotoUrl", "descricao".`,
-            config: {
-              tools: [{ googleSearch: {} }],
-            },
-          });
-
-          const rawText = response.text || "";
-          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[0]);
-              if (parsed.nomeProduto && !parsed.nomeProduto.toLowerCase().includes("desconhecido")) {
-                nomeProduto = parsed.nomeProduto;
-                marca = parsed.marca || cosmosDirect?.marca || rawOffData?.brands || "";
-                categoria = parsed.categoria || cosmosDirect?.categoria || "Mercearia / Grãos & Cereais";
-                if (parsed.fotoUrl && (parsed.fotoUrl.startsWith("http://") || parsed.fotoUrl.startsWith("https://"))) {
-                  fotoUrl = parsed.fotoUrl;
-                } else if (cosmosDirect?.fotoUrl) {
-                  fotoUrl = cosmosDirect.fotoUrl;
-                }
-                if (parsed.descricao) {
-                  descricao = parsed.descricao;
-                }
-                fonte = "Cosmos Bluesoft & Gemini Search";
-              }
-            } catch (jsonErr) {
-              console.warn("Erro ao parsear JSON do Gemini:", jsonErr);
-            }
-          }
-        } catch (gemErr: any) {
-          console.warn("Aviso na consulta Gemini (usando fallback Cosmos / OFF):", gemErr?.message || gemErr);
-        }
-      }
-
-      // 5. Fallback assembling from Open Food Facts if needed
-      if (!nomeProduto && rawOffData) {
+      // 4. If we have Open Food Facts data, build structured name
+      if (rawOffData) {
         const prod = rawOffData;
         const rawNome = prod.product_name_pt || prod.product_name || "";
         const rawMarca = prod.brands || "";
         const rawQtd = prod.quantity || "";
         const rawTipo = prod.generic_name_pt || prod.generic_name || "";
 
-        marca = rawMarca;
+        marca = marca || rawMarca;
         let partes = [];
         if (rawTipo && !rawNome.toLowerCase().includes(rawTipo.toLowerCase())) partes.push(rawTipo);
         if (rawMarca && !rawNome.toLowerCase().includes(rawMarca.toLowerCase())) partes.push(rawMarca);
         partes.push(rawNome);
         if (rawQtd && !rawNome.toLowerCase().includes(rawQtd.toLowerCase())) partes.push(rawQtd);
 
-        nomeProduto = partes.filter(Boolean).join(" ");
-        if (prod.image_front_url || prod.image_url) {
-          fotoUrl = prod.image_front_url || prod.image_url;
+        const constructedNome = partes.filter(Boolean).join(" ").trim();
+        if (constructedNome) {
+          nomeProduto = constructedNome;
+          if (!fotoUrl && (prod.image_front_url || prod.image_url)) {
+            fotoUrl = prod.image_front_url || prod.image_url;
+          }
+          fonte = fonte || "Open Food Facts";
         }
-        fonte = "Open Food Facts";
+      }
+
+      // 5. Try Gemini AI only if name is still missing or unformatted
+      if (!nomeProduto || nomeProduto.length < 4) {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (apiKey) {
+          try {
+            const ai = new GoogleGenAI({
+              apiKey,
+              httpOptions: {
+                headers: {
+                  "User-Agent": "aistudio-build",
+                },
+              },
+            });
+
+            const cosmosContext = cosmosDirect
+              ? `Dados Cosmos Bluesoft: Nome='${cosmosDirect.nomeProduto}', Marca='${cosmosDirect.marca}', Categoria='${cosmosDirect.categoria}'.`
+              : "";
+
+            const response = await ai.models.generateContent({
+              model: "gemini-2.5-flash",
+              contents: `Consulte os dados do produto com código de barras EAN ${cleanEan} (site:cosmos.bluesoft.com.br).
+${cosmosContext}
+Escreva o nome do produto estruturado para supermercado: [Tipo] + [Marca] + [Sabor/Linha] + [Peso/Volume] (ex: 'Achocolatado em Pó Nestlé Nescau 2.0 Lata 370g').
+Retorne JSON com: "nomeProduto", "marca", "categoria", "fotoUrl", "descricao".`,
+              config: {
+                responseMimeType: "application/json",
+              },
+            });
+
+            const rawText = response.text || "";
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              if (parsed.nomeProduto && !parsed.nomeProduto.toLowerCase().includes("desconhecido")) {
+                nomeProduto = parsed.nomeProduto;
+                if (parsed.marca) marca = parsed.marca;
+                if (parsed.categoria) categoria = parsed.categoria;
+                if (parsed.fotoUrl && (parsed.fotoUrl.startsWith("http://") || parsed.fotoUrl.startsWith("https://"))) {
+                  fotoUrl = parsed.fotoUrl;
+                }
+                fonte = "Cosmos Bluesoft & IA";
+              }
+            }
+          } catch (gemErr: any) {
+            // Silently fallback without logging 429 quota exhaustion errors
+          }
+        }
       }
 
       // 6. High quality clean studio packshots fallback based on product keywords
