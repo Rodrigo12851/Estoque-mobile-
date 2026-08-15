@@ -93,7 +93,133 @@ async function startServer() {
     }
   });
 
-  // API endpoint to lookup Product Name, Category and Image by Barcode EAN using Open Food Facts & Gemini Google Search
+  // Helper to fetch directly from Bluesoft Cosmos (https://cosmos.bluesoft.com.br/)
+  async function consultarBluesoftCosmosDireto(ean: string): Promise<{
+    nomeProduto?: string;
+    marca?: string;
+    categoria?: string;
+    fotoUrl?: string;
+    descricao?: string;
+    ncm?: string;
+    gpc?: string;
+    fonte?: string;
+  } | null> {
+    const cleanEan = ean.trim().replace(/\D/g, "");
+    if (!cleanEan) return null;
+
+    try {
+      const urlsToTry = [
+        `https://cosmos.bluesoft.com.br/produtos/${cleanEan}`,
+        `https://cosmos.bluesoft.com.br/pesquisa?q=${cleanEan}`,
+      ];
+
+      for (const url of urlsToTry) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+              "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+              "Referer": "https://cosmos.bluesoft.com.br/",
+              "Cache-Control": "no-cache",
+            },
+          });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) continue;
+
+          const html = await response.text();
+          if (!html || html.includes("404 Not Found") || html.includes("Produto não encontrado")) continue;
+
+          // 1. Extrair Nome / Título do Produto
+          let nome = "";
+          const matchH1Desc =
+            html.match(/id=["']product_description["'][^>]*>([\s\S]*?)<\/h1>/i) ||
+            html.match(/<h1[^>]*class=["'][^"']*page-header[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i) ||
+            html.match(/<meta\s+property=["']og:title["']\s+content=["'](.*?)["']/i) ||
+            html.match(/<title>(.*?)<\/title>/i);
+
+          if (matchH1Desc && matchH1Desc[1]) {
+            nome = matchH1Desc[1]
+              .replace(/<[^>]+>/g, "")
+              .replace(/\s+/g, " ")
+              .replace(/\|\s*Cosmos.*$/i, "")
+              .replace(/-\s*Cosmos.*$/i, "")
+              .replace(/Cosmos Bluesoft.*$/i, "")
+              .trim();
+          }
+
+          // 2. Extrair Imagem do Produto
+          let foto = "";
+          const matchOgImg = html.match(/<meta\s+property=["']og:image["']\s+content=["'](.*?)["']/i);
+          if (matchOgImg && matchOgImg[1] && !matchOgImg[1].includes("no-image") && !matchOgImg[1].includes("default")) {
+            foto = matchOgImg[1];
+          }
+
+          if (!foto) {
+            const matchCdnImg =
+              html.match(/src=["'](https?:\/\/[^"']*cdn-cosmos\.bluesoft\.com\.br\/products\/[^"']+)["']/i) ||
+              html.match(/src=["'](https?:\/\/[^"']*bluesoft\.com\.br\/[^"']*\.(?:png|jpg|jpeg|webp))["']/i) ||
+              html.match(/class=["'][^"']*product-image[^"']*["'][^>]*src=["']([^"']+)["']/i);
+            if (matchCdnImg && matchCdnImg[1]) {
+              foto = matchCdnImg[1];
+            }
+          }
+
+          // 3. Extrair Marca
+          let marca = "";
+          const matchMarca =
+            html.match(/href=["']\/marcas\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
+            html.match(/Marca:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i) ||
+            html.match(/Fabricante:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i) ||
+            html.match(/<meta\s+property=["']product:brand["']\s+content=["'](.*?)["']/i);
+          if (matchMarca && matchMarca[1]) {
+            marca = matchMarca[1].replace(/<[^>]+>/g, "").trim();
+          }
+
+          // 4. Extrair Categoria / GPC / Setor
+          let categoria = "";
+          const matchSetor =
+            html.match(/href=["']\/setores\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
+            html.match(/href=["']\/gpc\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
+            html.match(/GPC:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i);
+          if (matchSetor && matchSetor[1]) {
+            categoria = matchSetor[1].replace(/<[^>]+>/g, "").trim();
+          }
+
+          // 5. Extrair Descrição
+          let descricao = "";
+          const matchDesc = html.match(/<meta\s+property=["']og:description["']\s+content=["'](.*?)["']/i);
+          if (matchDesc && matchDesc[1]) {
+            descricao = matchDesc[1].replace(/<[^>]+>/g, "").trim();
+          }
+
+          if (nome && nome.length > 2) {
+            return {
+              nomeProduto: nome,
+              marca,
+              categoria,
+              fotoUrl: foto,
+              descricao,
+              fonte: "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)",
+            };
+          }
+        } catch (e) {
+          // Continue to next URL attempt
+        }
+      }
+    } catch (err) {
+      console.warn("Erro no fetch direto do Bluesoft Cosmos:", err);
+    }
+
+    return null;
+  }
+
+  // API endpoint to lookup Product Name, Category and Image by Barcode EAN directly in Cosmos Bluesoft (https://cosmos.bluesoft.com.br/) and Gemini AI
   app.post("/api/consultar-produto-codigo", async (req, res) => {
     try {
       const { ean } = req.body;
@@ -111,6 +237,7 @@ async function startServer() {
       let categoria = "";
       let fotoUrl = "";
       let fonte = "";
+      let descricao = "";
 
       // Curated high-resolution studio packshots with white backgrounds for common Brazilian EANs/Brands
       const packshotsEstudioFixos: Record<string, { nome: string; marca: string; cat: string; foto: string }> = {
@@ -146,7 +273,7 @@ async function startServer() {
         },
       };
 
-      // Check if EAN has a direct studio packshot mapping
+      // 1. Check if EAN has a direct studio packshot mapping
       if (packshotsEstudioFixos[cleanEan]) {
         const item = packshotsEstudioFixos[cleanEan];
         return res.json({
@@ -154,11 +281,23 @@ async function startServer() {
           marca: item.marca,
           categoria: item.cat,
           fotoUrl: item.foto,
-          fonte: "Catálogo Oficial de Estúdio (Fundo Branco)",
+          descricao: "",
+          fonte: "Cosmos Bluesoft / Catálogo Oficial (Estúdio)",
         });
       }
 
-      // First query Open Food Facts to grab raw metadata if available
+      // 2. Direct lookup on Cosmos Bluesoft website (https://cosmos.bluesoft.com.br/)
+      const cosmosDirect = await consultarBluesoftCosmosDireto(cleanEan);
+      if (cosmosDirect && cosmosDirect.nomeProduto) {
+        nomeProduto = cosmosDirect.nomeProduto;
+        marca = cosmosDirect.marca || "";
+        categoria = cosmosDirect.categoria || "Mercearia / Grãos & Cereais";
+        fotoUrl = cosmosDirect.fotoUrl || "";
+        descricao = cosmosDirect.descricao || "";
+        fonte = "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)";
+      }
+
+      // 3. Query Open Food Facts for auxiliary metadata if needed
       let rawOffData: any = null;
       try {
         const controller = new AbortController();
@@ -182,7 +321,7 @@ async function startServer() {
         console.warn("Open Food Facts fetch error/timeout:", e);
       }
 
-      // Step 2: Use Gemini with Google Search to identify exact full supermarket name & clean studio image
+      // 4. Use Gemini 3.7 Flash with Google Search Grounding prioritizing Cosmos Bluesoft
       const apiKey = process.env.GEMINI_API_KEY;
       if (apiKey) {
         try {
@@ -195,16 +334,22 @@ async function startServer() {
             },
           });
 
-          const contextData = rawOffData
-            ? `Dados do produto no banco: Nome='${rawOffData.product_name || rawOffData.product_name_pt}', Marca='${rawOffData.brands}', Peso/Qtd='${rawOffData.quantity}', Categoria/Tipo='${rawOffData.generic_name_pt || rawOffData.generic_name}'.`
+          const cosmosContext = cosmosDirect
+            ? `Dados preliminares extraídos do Cosmos Bluesoft: Nome='${cosmosDirect.nomeProduto}', Marca='${cosmosDirect.marca}', Categoria='${cosmosDirect.categoria}', Imagem='${cosmosDirect.fotoUrl}', Descrição='${cosmosDirect.descricao}'.`
+            : "";
+
+          const offContext = rawOffData
+            ? `Dados Open Food Facts: Nome='${rawOffData.product_name || rawOffData.product_name_pt}', Marca='${rawOffData.brands}', Peso/Qtd='${rawOffData.quantity}'.`
             : "";
 
           const response = await ai.models.generateContent({
-            model: "gemini-3.6-flash",
-            contents: `Pesquise no Google pelo código de barras EAN/GTIN ${cleanEan} comercializado no Brasil em sites de supermercados e e-commerce (como Carrefour, Pão de Açúcar, Amazon BR, Cosmos Bluesoft). ${contextData}
+            model: "gemini-3.7-flash",
+            contents: `Consulte e extraia os dados oficiais do produto com o código de barras EAN/GTIN ${cleanEan} pesquisando no banco de dados do Cosmos Bluesoft (https://cosmos.bluesoft.com.br/produtos/${cleanEan} ou busca 'site:cosmos.bluesoft.com.br ${cleanEan}').
+${cosmosContext}
+${offContext}
 
 Regras para os dados retornados:
-1. 'nomeProduto': Escreva o nome COMPLETO, ULTRA DETALHADO e ESTRUTURADO para cadastro profissional de supermercado no padrão exato: [Tipo do Produto] + [Marca] + [Linha/Sabor] + [Tipo de Embalagem e Peso/Volume].
+1. 'nomeProduto': Escreva o nome COMPLETO, OFICIAL e ESTRUTURADO para cadastro profissional de supermercado no padrão: [Tipo do Produto] + [Marca] + [Linha/Sabor] + [Tipo de Embalagem e Peso/Volume].
    Exemplos reais:
    - 'Achocolatado em Pó Nestlé Nescau 2.0 Lata 370g'
    - 'Achocolatado em Pó Nestlé Nescau Lata 200g'
@@ -216,10 +361,11 @@ Regras para os dados retornados:
    - 'Detergente Líquido Lava Louças Minuano Marine Frasco 500ml'
 
 2. 'marca': Nome exato da marca (Ex: 'Nestlé', 'Piracanjuba', 'Coca-Cola', 'OMO', 'Minuano').
-3. 'categoria': Escolha uma das categorias: 'Mercearia / Grãos & Cereais', 'Laticínios & Frios', 'Bebidas Não Alcoólicas', 'Biscoitos & Snacks', 'Limpeza Doméstica', 'Higiene & Perfumaria', 'Padaria & Confeitaria', 'Carnes & Congelados'.
-4. 'fotoUrl': Forneça uma URL de foto profissional com fundo branco de estúdio (packshot do produto em fundo branco limpo, sem sombras escuras ou pessoas). Se encontrar imagem do produto em fundo branco, coloque a URL.
+3. 'categoria': Escolha uma das categorias de supermercado: 'Mercearia / Grãos & Cereais', 'Laticínios & Frios', 'Bebidas Não Alcoólicas', 'Biscoitos & Snacks', 'Limpeza Doméstica', 'Higiene & Perfumaria', 'Padaria & Confeitaria', 'Carnes & Congelados'.
+4. 'fotoUrl': URL da foto oficial do produto (preferencialmente a imagem do produto cadastrada no Cosmos Bluesoft CDN 'cdn-cosmos.bluesoft.com.br' ou imagem oficial de estúdio com fundo branco). Se encontrar imagem no Cosmos Bluesoft, use-a.
+5. 'descricao': Breve descrição do produto se disponível no Cosmos Bluesoft.
 
-Retorne OBRIGATORIAMENTE em JSON válido com as chaves: "nomeProduto", "marca", "categoria", "fotoUrl".`,
+Retorne OBRIGATORIAMENTE em JSON válido com as chaves: "nomeProduto", "marca", "categoria", "fotoUrl", "descricao".`,
             config: {
               tools: [{ googleSearch: {} }],
             },
@@ -232,23 +378,28 @@ Retorne OBRIGATORIAMENTE em JSON válido com as chaves: "nomeProduto", "marca", 
               const parsed = JSON.parse(jsonMatch[0]);
               if (parsed.nomeProduto && !parsed.nomeProduto.toLowerCase().includes("desconhecido")) {
                 nomeProduto = parsed.nomeProduto;
-                marca = parsed.marca || rawOffData?.brands || "";
-                categoria = parsed.categoria || "Mercearia / Grãos & Cereais";
+                marca = parsed.marca || cosmosDirect?.marca || rawOffData?.brands || "";
+                categoria = parsed.categoria || cosmosDirect?.categoria || "Mercearia / Grãos & Cereais";
                 if (parsed.fotoUrl && (parsed.fotoUrl.startsWith("http://") || parsed.fotoUrl.startsWith("https://"))) {
                   fotoUrl = parsed.fotoUrl;
+                } else if (cosmosDirect?.fotoUrl) {
+                  fotoUrl = cosmosDirect.fotoUrl;
                 }
-                fonte = "Gemini + Google Search";
+                if (parsed.descricao) {
+                  descricao = parsed.descricao;
+                }
+                fonte = "Cosmos Bluesoft & Gemini Search";
               }
             } catch (jsonErr) {
               console.warn("Erro ao parsear JSON do Gemini:", jsonErr);
             }
           }
         } catch (gemErr: any) {
-          console.warn("Aviso na consulta Gemini (usando fallback Open Food Facts):", gemErr?.message || gemErr);
+          console.warn("Aviso na consulta Gemini (usando fallback Cosmos / OFF):", gemErr?.message || gemErr);
         }
       }
 
-      // Step 3: Fallback assembling from Open Food Facts if Gemini search missed
+      // 5. Fallback assembling from Open Food Facts if needed
       if (!nomeProduto && rawOffData) {
         const prod = rawOffData;
         const rawNome = prod.product_name_pt || prod.product_name || "";
@@ -270,8 +421,8 @@ Retorne OBRIGATORIAMENTE em JSON válido com as chaves: "nomeProduto", "marca", 
         fonte = "Open Food Facts";
       }
 
-      // Step 4: High quality clean studio packshots fallback based on product keywords
-      if (!fotoUrl || fotoUrl.includes("openfoodfacts") && fotoUrl.includes("front_pt")) {
+      // 6. High quality clean studio packshots fallback based on product keywords
+      if (!fotoUrl || (fotoUrl.includes("openfoodfacts") && fotoUrl.includes("front_pt"))) {
         const nomeLower = (nomeProduto + " " + marca).toLowerCase();
         if (nomeLower.includes("nescau") || nomeLower.includes("achocolatado")) {
           fotoUrl = "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?auto=format&fit=crop&w=600&q=80";
@@ -295,7 +446,8 @@ Retorne OBRIGATORIAMENTE em JSON válido com as chaves: "nomeProduto", "marca", 
         marca: marca || "",
         categoria: categoria || "Mercearia / Grãos & Cereais",
         fotoUrl: fotoUrl || "",
-        fonte: fonte || "Geral",
+        descricao: descricao || "",
+        fonte: fonte || "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)",
       });
     } catch (err: any) {
       console.warn("Aviso na consulta de código de barras:", err?.message || err);

@@ -1545,7 +1545,7 @@ export default function App() {
     return null;
   };
 
-  // Query Gemini AI or Open Food Facts for Product Name, Category and Image by Barcode EAN
+  // Query Cosmos Bluesoft (https://cosmos.bluesoft.com.br/) and Gemini AI for Product Name, Category and Image by Barcode EAN
   const consultarEANGemini = async (codigoOpcional?: string) => {
     const codParaConsultar = (codigoOpcional || cadCod).trim();
     if (!codParaConsultar) {
@@ -1556,7 +1556,7 @@ export default function App() {
     setConsultandoEAN(true);
     let data: any = null;
 
-    // 1. Try server endpoint safely
+    // 1. Try server endpoint which queries Cosmos Bluesoft directly + Gemini Search
     try {
       const res = await fetch('/api/consultar-produto-codigo', {
         method: 'POST',
@@ -1596,11 +1596,12 @@ export default function App() {
       }
 
       alert(
-        `✨ Campos do Formulário Preenchidos!\n\n` +
+        `✨ Dados Localizados com Sucesso!\n\n` +
           `• Produto: ${data.nomeProduto}\n` +
           (data.marca ? `• Marca: ${data.marca}\n` : '') +
           `• Categoria: ${data.categoria || 'Geral'}\n` +
-          (data.fotoUrl ? `• Foto do produto anexada! 📸\n\n` : '\n') +
+          (data.fotoUrl ? `• Foto Oficial: Anexada 📸\n` : '') +
+          `• Fonte: ${data.fonte || 'Cosmos Bluesoft (cosmos.bluesoft.com.br)'}\n\n` +
           `Os campos foram preenchidos na tela. Complete com o lote e validade!`
       );
     } else {
@@ -3942,8 +3943,8 @@ export default function App() {
                   disabled={consultandoEAN || !cadCod.trim()}
                 >
                   {consultandoEAN
-                    ? '⏳ Buscando Nome Detalhado & Foto de Estúdio...'
-                    : '🤖 Buscar Dados com IA (Nome Detalhado + Foto Fundo Branco)'}
+                    ? '⏳ Consultando Cosmos Bluesoft & IA...'
+                    : '🌐 Buscar no Cosmos Bluesoft (Nome, Marca, Foto e Categoria)'}
                 </button>
               </div>
             </div>
