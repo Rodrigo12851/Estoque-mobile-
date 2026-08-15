@@ -183,20 +183,76 @@ async function startServer() {
           const matchMarca =
             html.match(/href=["']\/marcas\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
             html.match(/Marca:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i) ||
+            html.match(/<dt[^>]*>\s*Marca:?\s*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i) ||
             html.match(/Fabricante:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i) ||
             html.match(/<meta\s+property=["']product:brand["']\s+content=["'](.*?)["']/i);
           if (matchMarca && matchMarca[1]) {
             marca = matchMarca[1].replace(/<[^>]+>/g, "").trim();
           }
 
-          // 4. Extrair Categoria / GPC / Setor
+          // 4. Extrair Categoria / Subcategoria / Setor / GPC do Cosmos Bluesoft com precisão
+          let subcategoria = "";
           let categoria = "";
+          let setor = "";
+          let gpc = "";
+
+          const matchSubcat =
+            html.match(/<dt[^>]*>\s*Subcategoria:?\s*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i) ||
+            html.match(/href=["']\/subcategorias\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+          if (matchSubcat && matchSubcat[1]) {
+            subcategoria = matchSubcat[1].replace(/<[^>]+>/g, "").trim();
+          }
+
+          const matchCat =
+            html.match(/<dt[^>]*>\s*Categoria:?\s*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i) ||
+            html.match(/href=["']\/categorias\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+          if (matchCat && matchCat[1]) {
+            categoria = matchCat[1].replace(/<[^>]+>/g, "").trim();
+          }
+
           const matchSetor =
-            html.match(/href=["']\/setores\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
-            html.match(/href=["']\/gpc\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
-            html.match(/GPC:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i);
+            html.match(/<dt[^>]*>\s*Setor:?\s*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i) ||
+            html.match(/href=["']\/setores\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
           if (matchSetor && matchSetor[1]) {
-            categoria = matchSetor[1].replace(/<[^>]+>/g, "").trim();
+            setor = matchSetor[1].replace(/<[^>]+>/g, "").trim();
+          }
+
+          const matchGPC =
+            html.match(/<dt[^>]*>\s*GPC:?\s*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i) ||
+            html.match(/GPC:?<\/span>\s*<span[^>]*>([\s\S]*?)<\/span>/i) ||
+            html.match(/href=["']\/gpc\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+          if (matchGPC && matchGPC[1]) {
+            gpc = matchGPC[1].replace(/<[^>]+>/g, "").trim();
+          }
+
+          // Se não encontrou por dt/dd, procurar em Breadcrumbs
+          if (!categoria && !subcategoria) {
+            const breadcrumbMatches = html.match(/class=["']breadcrumb["'][^>]*>([\s\S]*?)<\/(?:ol|ul)>/i);
+            if (breadcrumbMatches && breadcrumbMatches[1]) {
+              const links = [...breadcrumbMatches[1].matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi)]
+                .map((m) => m[1].replace(/<[^>]+>/g, "").trim())
+                .filter((t) => t && !/^(início|home|produtos|itens|principal)$/i.test(t));
+              if (links.length >= 2) {
+                categoria = links[0];
+                subcategoria = links.slice(1).join(" / ");
+              } else if (links.length === 1) {
+                categoria = links[0];
+              }
+            }
+          }
+
+          // Formatar categoria final precisa e limpa vinda do Cosmos
+          let categoriaFinal = "";
+          if (categoria && subcategoria && categoria.toLowerCase() !== subcategoria.toLowerCase()) {
+            categoriaFinal = `${categoria} / ${subcategoria}`;
+          } else if (categoria) {
+            categoriaFinal = categoria;
+          } else if (subcategoria) {
+            categoriaFinal = subcategoria;
+          } else if (gpc) {
+            categoriaFinal = gpc;
+          } else if (setor) {
+            categoriaFinal = setor;
           }
 
           // 5. Extrair Descrição
@@ -210,7 +266,7 @@ async function startServer() {
             return {
               nomeProduto: nome,
               marca,
-              categoria,
+              categoria: categoriaFinal,
               fotoUrl: foto,
               descricao,
               fonte: "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)",
@@ -317,7 +373,30 @@ async function startServer() {
         },
       };
 
-      // 1. Check if EAN has a direct studio packshot mapping
+      // 1. Direct live lookup on Cosmos Bluesoft website (https://cosmos.bluesoft.com.br/)
+      const cosmosDirect = await consultarBluesoftCosmosDireto(cleanEan);
+      if (cosmosDirect && cosmosDirect.nomeProduto && cosmosDirect.nomeProduto.length > 2) {
+        nomeProduto = cosmosDirect.nomeProduto;
+        marca = cosmosDirect.marca || "";
+        categoria = cosmosDirect.categoria || "";
+        fotoUrl = cosmosDirect.fotoUrl || "";
+        descricao = cosmosDirect.descricao || "";
+        fonte = "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)";
+
+        // If Cosmos Bluesoft returned complete product name and photo/brand/category, return immediately
+        if (nomeProduto && (fotoUrl || marca || categoria)) {
+          return res.json({
+            nomeProduto,
+            marca,
+            categoria,
+            fotoUrl,
+            descricao,
+            fonte,
+          });
+        }
+      }
+
+      // 2. Check if EAN has a studio packshot mapping with accurate category
       if (packshotsEstudioFixos[cleanEan]) {
         const item = packshotsEstudioFixos[cleanEan];
         return res.json({
@@ -328,29 +407,6 @@ async function startServer() {
           descricao: "",
           fonte: "Cosmos Bluesoft / Catálogo Oficial (Estúdio)",
         });
-      }
-
-      // 2. Direct lookup on Cosmos Bluesoft website (https://cosmos.bluesoft.com.br/)
-      const cosmosDirect = await consultarBluesoftCosmosDireto(cleanEan);
-      if (cosmosDirect && cosmosDirect.nomeProduto && cosmosDirect.nomeProduto.length > 2) {
-        nomeProduto = cosmosDirect.nomeProduto;
-        marca = cosmosDirect.marca || "";
-        categoria = cosmosDirect.categoria || "Mercearia / Grãos & Cereais";
-        fotoUrl = cosmosDirect.fotoUrl || "";
-        descricao = cosmosDirect.descricao || "";
-        fonte = "Cosmos Bluesoft (https://cosmos.bluesoft.com.br/)";
-
-        // If Cosmos Bluesoft returned complete product name and photo, return immediately (zero Gemini quota consumed!)
-        if (nomeProduto && (fotoUrl || marca)) {
-          return res.json({
-            nomeProduto,
-            marca,
-            categoria,
-            fotoUrl,
-            descricao,
-            fonte,
-          });
-        }
       }
 
       // 3. Query Open Food Facts for auxiliary metadata if needed

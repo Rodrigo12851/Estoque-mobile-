@@ -1499,8 +1499,15 @@ export default function App() {
             const tipo = prod.generic_name_pt || prod.generic_name || '';
             const foto = prod.image_front_url || prod.image_url || prod.image_front_small_url || prod.image_small_url || '';
 
-            let categoria = 'Mercearia / Grãos & Cereais';
-            if (prod.categories_tags && Array.isArray(prod.categories_tags)) {
+            let categoria = '';
+            if (prod.categories_pt) {
+              const cats = prod.categories_pt.split(',').map((s: string) => s.trim()).filter(Boolean);
+              categoria = cats[cats.length - 1] || cats[0] || '';
+            } else if (prod.categories) {
+              const cats = prod.categories.split(',').map((s: string) => s.trim()).filter(Boolean);
+              categoria = cats[cats.length - 1] || cats[0] || '';
+            }
+            if (!categoria && prod.categories_tags && Array.isArray(prod.categories_tags)) {
               const catsStr = prod.categories_tags.join(' ').toLowerCase();
               if (catsStr.includes('beverage') || catsStr.includes('drink') || catsStr.includes('bebida') || catsStr.includes('juice') || catsStr.includes('soda')) {
                 categoria = 'Bebidas Não Alcoólicas';
@@ -1510,6 +1517,8 @@ export default function App() {
                 categoria = 'Biscoitos & Snacks';
               } else if (catsStr.includes('cleaning') || catsStr.includes('detergent') || catsStr.includes('limpeza')) {
                 categoria = 'Limpeza Doméstica';
+              } else {
+                categoria = 'Mercearia';
               }
             }
 
@@ -1532,7 +1541,7 @@ export default function App() {
             return {
               nomeProduto: nomeCompleto || nome,
               marca,
-              categoria,
+              categoria: categoria || 'Mercearia',
               fotoUrl: foto,
               fonte: 'Open Food Facts (Direto)',
             };
@@ -1587,10 +1596,8 @@ export default function App() {
       setCadNome(data.nomeProduto);
       if (data.marca) setCadMarca(data.marca);
       if (data.categoria) {
-        const matchCat = LISTA_CATEGORIAS.find(
-          (c) => c.toLowerCase().includes(data.categoria.toLowerCase()) || data.categoria.toLowerCase().includes(c.toLowerCase())
-        );
-        setCadCategoria(matchCat || data.categoria);
+        // Preenche com a categoria exata retornada pelo Cosmos Bluesoft
+        setCadCategoria(data.categoria.trim());
       }
       if (data.fotoUrl) {
         setFotoTemp(data.fotoUrl);
@@ -1603,7 +1610,7 @@ export default function App() {
           `• Categoria: ${data.categoria || 'Geral'}\n` +
           (data.fotoUrl ? `• Foto Oficial: Anexada 📸\n` : '') +
           `• Fonte: ${data.fonte || 'Cosmos Bluesoft (cosmos.bluesoft.com.br)'}\n\n` +
-          `Os campos foram preenchidos na tela. Complete com o lote e validade!`
+          `Os campos foram preenchidos na tela com as informações oficiais do Cosmos Bluesoft!`
       );
     } else {
       alert(
@@ -1618,10 +1625,10 @@ export default function App() {
     if (!codigoLimpo) return;
 
     const itemCat = catalogoGlobal.find((c) => c.codigo === codigoLimpo);
-    if (itemCat) {
+    if (itemCat && itemCat.nome) {
       setCadNome(itemCat.nome || '');
-      setCadMarca(itemCat.marca || '');
-      setCadCategoria(itemCat.categoria || '');
+      if (itemCat.marca) setCadMarca(itemCat.marca);
+      if (itemCat.categoria) setCadCategoria(itemCat.categoria);
       if (itemCat.imagem) {
         setFotoTemp(itemCat.imagem);
       }
@@ -1811,12 +1818,16 @@ export default function App() {
       novoEstoque[indexExistente].quantidade += qtdDigitada;
       novoEstoque[indexExistente].preco_venda = precoDigitado;
       novoEstoque[indexExistente].preco_custo = custoDigitado;
+      novoEstoque[indexExistente].categoria = categoriaDigitada || 'Geral';
+      novoEstoque[indexExistente].marca = marcaDigitada;
       if (fotoTemp) novoEstoque[indexExistente].foto = fotoTemp;
     } else {
       novoEstoque.push({
         codigo_barras: codigoDigitado,
         codigo: codigoDigitado,
         nome: nomeDigitado,
+        marca: marcaDigitada,
+        categoria: categoriaDigitada || 'Geral',
         quantidade: qtdDigitada,
         lote: loteDigitado,
         validade: valDigitada,
@@ -1830,6 +1841,8 @@ export default function App() {
       codigo_barras: codigoDigitado,
       codigo: codigoDigitado,
       nome: nomeDigitado,
+      marca: marcaDigitada,
+      categoria: categoriaDigitada || 'Geral',
       quantidade: indexExistente !== -1 && !codigoEditando ? novoEstoque[indexExistente].quantidade : qtdDigitada,
       lote: loteDigitado,
       validade: valDigitada,
@@ -4085,23 +4098,53 @@ export default function App() {
               />
             </div>
             <div className="grupo-input">
-              <label className="rotulo-campo">Categoria</label>
-              <select
-                id="cad-categoria"
-                className="input-modal"
-                value={cadCategoria}
-                onChange={(e) => setCadCategoria(e.target.value)}
-              >
-                <option value="">-- Selecione a Categoria --</option>
-                {cadCategoria && !LISTA_CATEGORIAS.includes(cadCategoria) && (
-                  <option value={cadCategoria}>{cadCategoria}</option>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <label className="rotulo-campo" style={{ marginBottom: 0 }}>Categoria do Produto</label>
+                {cadCategoria && (
+                  <span style={{ fontSize: '0.74rem', color: '#0369a1', background: '#e0f2fe', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                    🏷️ {cadCategoria}
+                  </span>
                 )}
-                {LISTA_CATEGORIAS.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
+              </div>
+              <div className="linha-input">
+                <input
+                  type="text"
+                  id="cad-categoria"
+                  list="lista-categorias-sugestoes"
+                  className="input-modal"
+                  placeholder="Ex: Achocolatados em Pó, Bebidas, Laticínios, Limpeza..."
+                  value={cadCategoria}
+                  onChange={(e) => setCadCategoria(e.target.value)}
+                  style={{ marginBottom: 0 }}
+                />
+                <select
+                  className="input-modal"
+                  style={{ width: 'auto', minWidth: '130px', marginBottom: 0, fontSize: '0.82rem', background: '#f8fafc' }}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) setCadCategoria(e.target.value);
+                  }}
+                  title="Selecionar das categorias sugeridas"
+                >
+                  <option value="">📂 Sugestões...</option>
+                  {LISTA_CATEGORIAS.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <datalist id="lista-categorias-sugestoes">
+                {Array.from(
+                  new Set([
+                    ...LISTA_CATEGORIAS,
+                    ...catalogoGlobal.map((c) => c.categoria).filter(Boolean),
+                    ...estoque.map((e) => e.categoria).filter(Boolean),
+                  ])
+                ).map((cat) => (
+                  <option key={cat as string} value={cat as string} />
                 ))}
-              </select>
+              </datalist>
             </div>
 
             {/* CAMPOS DO ESTOQUE DA LOJA (Quantidade, Lote, Validade, Preço de Custo, Preço de Venda) */}

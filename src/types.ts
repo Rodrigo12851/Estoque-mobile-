@@ -12,6 +12,8 @@ export interface ItemEstoque {
   codigo_barras?: string;
   codigo: string;
   nome: string;
+  marca?: string;
+  categoria?: string;
   quantidade: number;
   lote: string;
   validade: string;
