@@ -242,6 +242,7 @@ export default function App() {
   const [avisoRestrito, setAvisoRestrito] = useState<string | null>(null);
 
   // Product Form
+  const [modoCadastroItem, setModoCadastroItem] = useState<'estoque' | 'master'>('estoque');
   const [codigoEditando, setCodigoEditando] = useState<{ codigo: string; validade: string; lote: string } | null>(null);
   const [cadCod, setCadCod] = useState<string>('');
   const [cadNome, setCadNome] = useState<string>('');
@@ -1640,8 +1641,9 @@ export default function App() {
   };
 
   // Add / Edit Product Modal
-  const abrirCadastro = () => {
+  const abrirCadastro = (modo: 'estoque' | 'master' = 'estoque') => {
     fecharMenu();
+    setModoCadastroItem(perfilAtivo === 'dona_app' ? modo : 'estoque');
     setCodigoEditando(null);
     setFotoTemp('');
     setCadCod('');
@@ -1663,6 +1665,7 @@ export default function App() {
     if (!p) {
       const cat = catalogoGlobal.find((c) => c.codigo === cod);
       if (cat) {
+        setModoCadastroItem(perfilAtivo === 'dona_app' ? 'master' : 'estoque');
         setCodigoEditando({ codigo: cod, validade: '', lote: '' });
         setCadCod(cat.codigo);
         setCadNome(cat.nome);
@@ -1680,6 +1683,7 @@ export default function App() {
       return;
     }
 
+    setModoCadastroItem('estoque');
     setCodigoEditando({ codigo: cod, validade: val, lote });
     setCadCod(p.codigo);
     setCadNome(p.nome);
@@ -1714,8 +1718,8 @@ export default function App() {
     const marcaDigitada = cadMarca.trim();
     const categoriaDigitada = cadCategoria.trim();
 
-    // MODO DONA DO APLICATIVO (Cadastro no Banco de Dados Master / Catálogo Geral)
-    if (perfilAtivo === 'dona_app') {
+    // MODO BANCO MASTER PURO
+    if (perfilAtivo === 'dona_app' && modoCadastroItem === 'master') {
       if (!codigoDigitado || !nomeDigitado) {
         setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha o Código de Barras e o Nome do Produto!</span>);
         return;
@@ -1752,15 +1756,15 @@ export default function App() {
       return;
     }
 
-    // MODO ESTOQUE DA LOJA (Admin Loja / Caixa)
+    // MODO ESTOQUE DA LOJA (Adicionar ao Estoque da Loja Selecionada com Quantidade, Validade, Preço de Custo e Venda)
     const qtdDigitada = parseInt(cadQtd, 10);
-    const loteDigitado = cadLote.trim();
+    const loteDigitado = cadLote.trim() || `LOTE-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     const valDigitada = cadVal;
     const custoDigitado = parseFloat(cadCusto) || 0;
     const precoDigitado = parseFloat(cadPreco);
 
     if (!codigoDigitado || !nomeDigitado || isNaN(qtdDigitada) || !valDigitada || isNaN(precoDigitado)) {
-      setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha todos os campos obrigatórios (Código, Nome, Quantidade, Validade e Preço)!</span>);
+      setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha todos os campos obrigatórios (Código, Nome, Quantidade, Validade e Preço de Venda)!</span>);
       return;
     }
 
@@ -1837,7 +1841,12 @@ export default function App() {
     setEstoque(novoEstoque);
     localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
     salvarItemEstoqueFirestore(itemSalvar, supermercadoAtual);
-    setMsgCad(<span style={{ color: 'var(--sucesso)' }}>✅ Salvo com sucesso no estoque de {nomeSupermercadoAtivo}!</span>);
+
+    setMsgCad(
+      <span style={{ color: 'var(--sucesso)' }}>
+        ✅ {codigoEditando ? 'Item atualizado com sucesso!' : `Produto adicionado ao estoque de ${nomeSupermercadoAtivo}!`}
+      </span>
+    );
     notificarSincronizacao();
 
     setTimeout(() => {
@@ -2344,6 +2353,35 @@ export default function App() {
             />
 
             <button
+              className="btn"
+              style={{
+                background: '#16a34a',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                padding: '7px 10px',
+                whiteSpace: 'nowrap',
+                gap: '4px',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                flexShrink: 0,
+                border: 'none',
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                if (verificarPermissaoOuAvisar('estoque', 'cadastrar_produtos', 'Adicionar Produto')) {
+                  abrirCadastro('estoque');
+                }
+              }}
+              title="Adicionar Produto ao Estoque (Validade, Preço de Venda, Custo e Lote)"
+            >
+              <span>➕</span>
+              <span>Estoque</span>
+            </button>
+
+            <button
               className="btn btn-notif"
               onClick={() => abrirNotificacoes(produtosEstoqueBaixoCount > 0 ? 'estoque_baixo' : 'validade')}
               title={`Notificações & Alertas (${totalNotificacoes})`}
@@ -2491,15 +2529,29 @@ export default function App() {
 
           <div
             className="sidebar-item"
+            style={{ fontWeight: 700, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}
             onClick={() => {
               if (verificarPermissaoOuAvisar('estoque', 'cadastrar_produtos', 'Cadastrar Produtos')) {
-                abrirCadastro();
+                abrirCadastro('estoque');
                 fecharMenu();
               }
             }}
           >
-            ➕ Adicionar Item (Estoque)
+            ➕ Adicionar Item em Estoque (Validade, Preços & Qtd)
           </div>
+
+          {perfilAtivo === 'dona_app' && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 600, background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}
+              onClick={() => {
+                abrirCadastro('master');
+                fecharMenu();
+              }}
+            >
+              👑 Cadastrar no Banco de Dados Master (Geral)
+            </div>
+          )}
 
           <div
             className="sidebar-item"
@@ -3891,13 +3943,74 @@ export default function App() {
         <div className="modal-conteudo">
           <div className="cab-modal" id="titulo-modal-cad">
             {perfilAtivo === 'dona_app'
-              ? (codigoEditando ? '👑 Editar Item no Banco de Dados Master' : '👑 Cadastrar Novo Item no Banco de Dados')
-              : (codigoEditando ? 'Editar Lote no Estoque' : 'Novo Produto no Estoque')}
+              ? (modoCadastroItem === 'master'
+                  ? (codigoEditando ? '👑 Editar Item no Banco de Dados Master' : '👑 Cadastrar Item no Banco Master')
+                  : (codigoEditando ? `✏️ Editar Item no Estoque (${nomeSupermercadoAtivo})` : `➕ Adicionar Item ao Estoque (${nomeSupermercadoAtivo})`))
+              : (codigoEditando ? `✏️ Editar Produto (${nomeSupermercadoAtivo})` : `➕ Novo Produto no Estoque (${nomeSupermercadoAtivo})`)}
           </div>
           <div className="corpo-modal">
-            {perfilAtivo === 'dona_app' && (
+            {/* SELETOR DE MODO PARA DONA DO APP */}
+            {perfilAtivo === 'dona_app' && !codigoEditando && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '8px 6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    border: modoCadastroItem === 'estoque' ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                    background: modoCadastroItem === 'estoque' ? '#dcfce7' : '#f8fafc',
+                    color: modoCadastroItem === 'estoque' ? '#15803d' : '#64748b',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => setModoCadastroItem('estoque')}
+                >
+                  📦 Adicionar ao Estoque da Loja
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '8px 6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    border: modoCadastroItem === 'master' ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                    background: modoCadastroItem === 'master' ? '#e0f2fe' : '#f8fafc',
+                    color: modoCadastroItem === 'master' ? '#0369a1' : '#64748b',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => setModoCadastroItem('master')}
+                >
+                  👑 Banco Master (Catálogo)
+                </button>
+              </div>
+            )}
+
+            {/* INFORMAÇÃO DA LOJA SELECIONADA */}
+            {(perfilAtivo !== 'dona_app' || modoCadastroItem === 'estoque') && (
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  marginBottom: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--primario)' }}>🏪 Loja Selecionada:</span>
+                <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--texto)' }}>{nomeSupermercadoAtivo}</span>
+              </div>
+            )}
+
+            {perfilAtivo === 'dona_app' && modoCadastroItem === 'master' && (
               <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '0.82rem', color: '#0369a1' }}>
-                👑 <b>Modo Dona do Aplicativo:</b> Cadastro direto no Banco de Dados Geral (Catálogo Master). Os supermercados poderão utilizar este item automaticamente ao ler o código de barras.
+                👑 <b>Modo Banco de Dados Master:</b> Os dados deste item ficarão disponíveis para todos os supermercados utilizarem na leitura de código de barras.
               </div>
             )}
 
@@ -3991,8 +4104,8 @@ export default function App() {
               </select>
             </div>
 
-            {/* CAMPOS DO ESTOQUE DA LOJA */}
-            {perfilAtivo !== 'dona_app' && (
+            {/* CAMPOS DO ESTOQUE DA LOJA (Quantidade, Lote, Validade, Preço de Custo, Preço de Venda) */}
+            {(perfilAtivo !== 'dona_app' || modoCadastroItem === 'estoque') && (
               <>
                 <div className="grupo-input">
                   <label className="rotulo-campo">Quantidade em Estoque</label>
