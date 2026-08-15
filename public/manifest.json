@@ -1,0 +1,22 @@
+{
+  "short_name": "Estoque Mobile",
+  "name": "Estoque Mobile Multi-Supermercado",
+  "description": "Aplicativo mobile de gestão de estoque, leitor de código de barras e PDV para supermercados",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3081/3081559.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3081/3081559.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0284c7",
+  "display": "standalone",
+  "orientation": "portrait"
+}
