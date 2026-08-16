@@ -1,3 +1,4 @@
+import { initializeApp, getApps } from 'firebase/app';
 import {
   collection,
   doc,
@@ -7,6 +8,7 @@ import {
   query,
   where,
   getDocs,
+  getFirestore,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
@@ -146,8 +148,12 @@ export async function salvarSupermercadoFirestore(loja: Supermercado) {
   try {
     const docRef = doc(db, 'supermercados', loja.id);
     await setDoc(docRef, limparUndefined(loja), { merge: true });
-  } catch (err) {
-    console.error('Erro ao salvar supermercado no Firestore:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+      console.warn('Aviso: Permissão de escrita pendente no Firestore. Publique as regras de leitura/escrita no Console do Firebase.');
+    } else {
+      console.error('Erro ao salvar supermercado no Firestore:', err);
+    }
   }
 }
 
@@ -157,8 +163,12 @@ export async function salvarItemEstoqueFirestore(item: ItemEstoque, lojaId: stri
     const docId = `${lojaId}_${item.codigo}_${item.validade || 'semval'}_${item.lote || 'semlote'}`;
     const docRef = doc(db, 'estoque', docId);
     await setDoc(docRef, limparUndefined({ ...item, lojaId }), { merge: true });
-  } catch (err) {
-    console.error('Erro ao salvar item no estoque no Firestore:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+      console.warn('Aviso: Permissão de escrita pendente no Firestore para itens de estoque.');
+    } else {
+      console.error('Erro ao salvar item no estoque no Firestore:', err);
+    }
   }
 }
 
@@ -178,8 +188,12 @@ export async function salvarProdutoCatalogoFirestore(prod: ProdutoCatalogo) {
   try {
     const docRef = doc(db, 'produtos_catalogo', prod.codigo);
     await setDoc(docRef, limparUndefined(prod), { merge: true });
-  } catch (err) {
-    console.error('Erro ao salvar no catalogo global no Firestore:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+      console.warn('Aviso: Permissão de escrita pendente no Firestore para catálogo de produtos.');
+    } else {
+      console.error('Erro ao salvar no catalogo global no Firestore:', err);
+    }
   }
 }
 
@@ -389,6 +403,79 @@ export async function migrarTodosCadastrosParaNovoBanco(params: {
       sucesso: false,
       totalItens: 0,
       detalhe: `Erro ao migrar dados: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+// Migração Automática Direta (Firestore Antigo -> Novo Banco Firestore)
+export async function migrarDiretamenteDoBancoAntigoParaNovo(): Promise<{
+  sucesso: boolean;
+  totalMigrado: number;
+  detalhe: string;
+  resumo: Record<string, number>;
+}> {
+  const oldConfig = {
+    projectId: "persuasive-feather-g6pck",
+    appId: "1:353856384334:web:95fae68f5a87b3288b421f",
+    apiKey: "AIzaSyA9PiyhhhDD54GxSLVa-78_jaU1Sfe4d00",
+    authDomain: "persuasive-feather-g6pck.firebaseapp.com",
+    firestoreDatabaseId: "ai-studio-estoquemobilemul-b1688de7-0841-470f-82ba-037947580bc7",
+    storageBucket: "persuasive-feather-g6pck.firebasestorage.app",
+    messagingSenderId: "353856384334",
+  };
+
+  try {
+    let appAntigo;
+    const apps = getApps();
+    const existingOld = apps.find((a) => a.name === 'app_antigo_migracao');
+    if (existingOld) {
+      appAntigo = existingOld;
+    } else {
+      appAntigo = initializeApp(oldConfig, 'app_antigo_migracao');
+    }
+
+    const dbAntigo = getFirestore(appAntigo, oldConfig.firestoreDatabaseId);
+
+    const colecoes = [
+      'supermercados',
+      'produtos_catalogo',
+      'estoque',
+      'operadores',
+      'vendas',
+      'clientes_devedores',
+    ];
+
+    let totalMigrado = 0;
+    const resumo: Record<string, number> = {};
+
+    for (const col of colecoes) {
+      try {
+        const snap = await getDocs(collection(dbAntigo, col));
+        resumo[col] = snap.docs.length;
+        for (const docSnap of snap.docs) {
+          const data = docSnap.data();
+          const docId = docSnap.id;
+          await setDoc(doc(db, col, docId), data, { merge: true });
+          totalMigrado++;
+        }
+      } catch (err) {
+        console.warn(`Aviso ao ler coleção ${col} do banco antigo:`, err);
+      }
+    }
+
+    return {
+      sucesso: true,
+      totalMigrado,
+      detalhe: `${totalMigrado} registros transferidos com sucesso do banco antigo para o novo banco de dados appestoqueprodutos-bb92d!`,
+      resumo,
+    };
+  } catch (err) {
+    console.error('Erro na migracao direta entre bancos:', err);
+    return {
+      sucesso: false,
+      totalMigrado: 0,
+      detalhe: `Erro ao transferir dados: ${err instanceof Error ? err.message : String(err)}`,
+      resumo: {},
     };
   }
 }

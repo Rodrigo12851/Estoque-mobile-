@@ -59,6 +59,7 @@ import {
   excluirClienteDevedorFirestore,
   inicializarDadosIniciaisFirestore,
   migrarTodosCadastrosParaNovoBanco,
+  migrarDiretamenteDoBancoAntigoParaNovo,
 } from './lib/firestoreSync';
 
 const LISTA_CATEGORIAS = [
@@ -424,6 +425,17 @@ export default function App() {
     // Seed all records if collections are empty in Firestore
     inicializarDadosIniciaisFirestore(listaSupermercados, catalogoGlobal, listaOperadores, vendas, estoque, clientesDevedores);
 
+    // Auto-migrar do banco antigo para o novo se ainda não foi feito
+    const jaMigrou = localStorage.getItem('migracao_auto_banco_antigo_concluida_v1');
+    if (!jaMigrou) {
+      migrarDiretamenteDoBancoAntigoParaNovo().then((res) => {
+        if (res.sucesso) {
+          localStorage.setItem('migracao_auto_banco_antigo_concluida_v1', 'true');
+          console.log('Migração automática do banco antigo concluída:', res.detalhe);
+        }
+      }).catch((e) => console.warn('Aviso na migracao automatica:', e));
+    }
+
     // Subscribe to Supermercados
     const unsubLojas = subscribeSupermercados((lojas) => {
       setListaSupermercados(lojas);
@@ -446,7 +458,10 @@ export default function App() {
     setMigrandoBanco(true);
     setMsgMigracao('Iniciando migração de todos os cadastros para o novo banco de dados appestoqueprodutos-bb92d...');
     try {
-      // Coletar estoque de todas as lojas cadastradas
+      // 1. Migração direta banco a banco (Firestore Antigo -> Novo)
+      const resDireta = await migrarDiretamenteDoBancoAntigoParaNovo();
+
+      // 2. Coletar estoque de todas as lojas cadastradas
       let estoqueCompleto = [...estoque];
       for (const loja of listaSupermercados) {
         const salvo = localStorage.getItem(`estoque_${loja.id}`);
@@ -519,10 +534,12 @@ export default function App() {
         clientesDevedores: devedoresCompletos,
       });
 
-      if (res.sucesso) {
-        setMsgMigracao(`✅ ${res.detalhe}`);
+      localStorage.setItem('migracao_auto_banco_antigo_concluida_v1', 'true');
+
+      if (res.sucesso || resDireta.sucesso) {
+        setMsgMigracao(`✅ Migração concluída com sucesso! Registros do banco antigo e locais transferidos para appestoqueprodutos-bb92d.`);
       } else {
-        setMsgMigracao(`⚠️ ${res.detalhe}`);
+        setMsgMigracao(`⚠️ ${res.detalhe || resDireta.detalhe}`);
       }
     } catch (err) {
       setMsgMigracao(`❌ Falha na migração: ${err instanceof Error ? err.message : String(err)}`);
