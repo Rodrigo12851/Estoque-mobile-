@@ -9,6 +9,7 @@ export interface ProdutoCatalogo {
 }
 
 export interface ItemEstoque {
+  lojaId?: string;
   codigo_barras?: string;
   codigo: string;
   nome: string;
@@ -77,10 +78,21 @@ export interface Supermercado {
   nome: string;
   cnpj: string;
   senha: string;
+  status?: 'ativo' | 'bloqueado'; // Bloqueio pelo Dono do App
+  motivoBloqueio?: string;
   dataCadastro?: string;
   permissoesLoja?: PermissoesLoja;
   limiteCaixas?: number;       // Limite máximo de Operadores de Caixa (ex: 5)
   limiteSupervisores?: number; // Limite máximo de Supervisores/Admins (ex: 2)
+}
+
+export interface SessaoUsuario {
+  tipo: 'dona_app' | 'admin_loja' | 'caixa';
+  lojaId?: string;
+  lojaNome?: string;
+  operadorId?: string;
+  operadorNome?: string;
+  operadorCargo?: string;
 }
 
 export interface VendaItem {

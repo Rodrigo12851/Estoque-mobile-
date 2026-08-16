@@ -12,6 +12,7 @@ import {
   ClienteDevedor,
   CompraFiado,
   PagamentoFiado,
+  SessaoUsuario,
   PERMISSOES_LOJA_PADRAO,
   PERMISSOES_CAIXA_PADRAO,
   PERMISSOES_ADMIN_PADRAO,
@@ -24,6 +25,7 @@ import { GestaoCaixaModal } from './components/GestaoCaixaModal';
 import { AlertasWhatsAppModal } from './components/AlertasWhatsAppModal';
 import { GestaoDevedoresModal } from './components/GestaoDevedoresModal';
 import { CentroNotificacoesModal } from './components/CentroNotificacoesModal';
+import { TelaLogin } from './components/TelaLogin';
 import { tocarBeepCaixa, tocarSomSucessoVenda } from './lib/soundUtils';
 import { exportarEstoqueCSV } from './lib/exportUtils';
 import { processarCodigoBarraBalanca } from './lib/balancaUtils';
@@ -56,6 +58,7 @@ import {
   excluirOperadorFirestore,
   excluirClienteDevedorFirestore,
   inicializarDadosIniciaisFirestore,
+  migrarTodosCadastrosParaNovoBanco,
 } from './lib/firestoreSync';
 
 const LISTA_CATEGORIAS = [
@@ -188,6 +191,7 @@ export default function App() {
   const [msgRegLoja, setMsgRegLoja] = useState<React.ReactNode>('');
 
   // Active User Profile & Session State
+  const [telaLoginVisivel, setTelaLoginVisivel] = useState<boolean>(false);
   const [perfilAtivo, setPerfilAtivo] = useState<'dona_app' | 'admin_loja' | 'caixa'>(() => {
     return (localStorage.getItem('perfilAtivoTipo') as any) || 'dona_app';
   });
@@ -240,6 +244,10 @@ export default function App() {
 
   // Restricted Access Warning Popup
   const [avisoRestrito, setAvisoRestrito] = useState<string | null>(null);
+
+  // Firestore Database Migration States
+  const [migrandoBanco, setMigrandoBanco] = useState<boolean>(false);
+  const [msgMigracao, setMsgMigracao] = useState<string | null>(null);
 
   // Product Form
   const [modoCadastroItem, setModoCadastroItem] = useState<'estoque' | 'master'>('estoque');
@@ -413,8 +421,8 @@ export default function App() {
 
   // Firebase Firestore Real-time Cloud Database Sync & Initial Seeding
   useEffect(() => {
-    // Seed default data if empty in Firestore
-    inicializarDadosIniciaisFirestore(listaSupermercados, catalogoGlobal, listaOperadores, vendas);
+    // Seed all records if collections are empty in Firestore
+    inicializarDadosIniciaisFirestore(listaSupermercados, catalogoGlobal, listaOperadores, vendas, estoque, clientesDevedores);
 
     // Subscribe to Supermercados
     const unsubLojas = subscribeSupermercados((lojas) => {
@@ -433,6 +441,95 @@ export default function App() {
       unsubCat();
     };
   }, []);
+
+  const handleMigrarParaNovoBanco = async () => {
+    setMigrandoBanco(true);
+    setMsgMigracao('Iniciando migração de todos os cadastros para o novo banco de dados appestoqueprodutos-bb92d...');
+    try {
+      // Coletar estoque de todas as lojas cadastradas
+      let estoqueCompleto = [...estoque];
+      for (const loja of listaSupermercados) {
+        const salvo = localStorage.getItem(`estoque_${loja.id}`);
+        if (salvo) {
+          try {
+            const itens = JSON.parse(salvo);
+            for (const item of itens) {
+              if (!estoqueCompleto.some((e) => e.codigo === item.codigo && e.validade === item.validade && e.lote === item.lote && (e.lojaId || loja.id) === loja.id)) {
+                estoqueCompleto.push({ ...item, lojaId: loja.id });
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Coletar operadores de todas as lojas
+      let operadoresCompletos = [...listaOperadores];
+      for (const loja of listaSupermercados) {
+        const salvo = localStorage.getItem(`operadores_caixa_${loja.id}`);
+        if (salvo) {
+          try {
+            const ops = JSON.parse(salvo);
+            for (const op of ops) {
+              if (!operadoresCompletos.some((o) => o.id === op.id)) {
+                operadoresCompletos.push(op);
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Coletar vendas de todas as lojas
+      let vendasCompletas = [...vendas];
+      for (const loja of listaSupermercados) {
+        const salvo = localStorage.getItem(`vendas_${loja.id}`);
+        if (salvo) {
+          try {
+            const vends = JSON.parse(salvo);
+            for (const v of vends) {
+              if (!vendasCompletas.some((vn) => vn.id === v.id)) {
+                vendasCompletas.push(v);
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Coletar clientes devedores de todas as lojas
+      let devedoresCompletos = [...clientesDevedores];
+      for (const loja of listaSupermercados) {
+        const salvo = localStorage.getItem(`clientes_devedores_${loja.id}`);
+        if (salvo) {
+          try {
+            const devs = JSON.parse(salvo);
+            for (const d of devs) {
+              if (!devedoresCompletos.some((dn) => dn.id === d.id)) {
+                devedoresCompletos.push(d);
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      const res = await migrarTodosCadastrosParaNovoBanco({
+        supermercados: listaSupermercados,
+        catalogo: catalogoGlobal,
+        estoque: estoqueCompleto,
+        operadores: operadoresCompletos,
+        vendas: vendasCompletas,
+        clientesDevedores: devedoresCompletos,
+      });
+
+      if (res.sucesso) {
+        setMsgMigracao(`✅ ${res.detalhe}`);
+      } else {
+        setMsgMigracao(`⚠️ ${res.detalhe}`);
+      }
+    } catch (err) {
+      setMsgMigracao(`❌ Falha na migração: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMigrandoBanco(false);
+    }
+  };
 
   useEffect(() => {
     if (!supermercadoAtual) return;
@@ -816,6 +913,8 @@ export default function App() {
     const limCaixasNum = Math.max(0, Number(regLojaLimiteCaixas) || 0);
     const limSupNum = Math.max(0, Number(regLojaLimiteSupervisores) || 0);
 
+    const lojaExistente = listaSupermercados.find((l) => l.id === idLoja);
+
     const dadosLoja: Supermercado = {
       id: idLoja,
       nome,
@@ -824,7 +923,9 @@ export default function App() {
       permissoesLoja: regLojaPermissoes,
       limiteCaixas: limCaixasNum,
       limiteSupervisores: limSupNum,
-      dataCadastro: new Date().toLocaleDateString('pt-BR'),
+      status: lojaExistente?.status || 'ativo',
+      motivoBloqueio: lojaExistente?.motivoBloqueio || '',
+      dataCadastro: lojaExistente?.dataCadastro || new Date().toLocaleDateString('pt-BR'),
     };
 
     let novaLista = [...listaSupermercados];
@@ -869,6 +970,58 @@ export default function App() {
     setTimeout(() => {
       setMsgRegLoja('');
     }, 2000);
+  };
+
+  // Bloquear / Desbloquear Supermercado (Exclusivo Dono do App)
+  const alternarBloqueioSupermercado = (idLoja: string) => {
+    const loja = listaSupermercados.find((l) => l.id === idLoja);
+    if (!loja) return;
+
+    const novoStatus: 'ativo' | 'bloqueado' = loja.status === 'bloqueado' ? 'ativo' : 'bloqueado';
+    const confirmMsg =
+      novoStatus === 'bloqueado'
+        ? `[Dona do App] Deseja realmente BLOQUEAR o supermercado "${loja.nome}"?\n\nOs administradores e funcionários desta loja não conseguirão mais acessar ou operar o sistema.`
+        : `[Dona do App] Deseja DESBLOQUEAR o supermercado "${loja.nome}"?\n\nO acesso para toda a equipe da loja será restabelecido imediatamente.`;
+
+    if (confirm(confirmMsg)) {
+      let motivo = loja.motivoBloqueio || '';
+      if (novoStatus === 'bloqueado') {
+        const motivoDigitado = prompt(
+          'Motivo do bloqueio da loja (exibido para a equipe ao tentar entrar):',
+          'Mensalidade pendente / Suspensão administrativa pelo Dono do App'
+        );
+        motivo = motivoDigitado ? motivoDigitado.trim() : 'Suspensão administrativa pelo Dono do App';
+      }
+
+      const novaLista = listaSupermercados.map((l) => {
+        if (l.id === idLoja) {
+          return {
+            ...l,
+            status: novoStatus,
+            motivoBloqueio: novoStatus === 'bloqueado' ? motivo : '',
+          };
+        }
+        return l;
+      });
+
+      setListaSupermercados(novaLista);
+      localStorage.setItem('lista_supermercados_app', JSON.stringify(novaLista));
+
+      const lojaAtualizada = novaLista.find((l) => l.id === idLoja);
+      if (lojaAtualizada) {
+        salvarSupermercadoFirestore(lojaAtualizada);
+        localStorage.setItem(`config_supermercado_${idLoja}`, JSON.stringify(lojaAtualizada));
+      }
+
+      setMsgRegLoja(
+        <span style={{ color: novoStatus === 'bloqueado' ? '#dc2626' : '#16a34a', fontWeight: 700 }}>
+          {novoStatus === 'bloqueado'
+            ? `🚫 Supermercado "${loja.nome}" BLOQUEADO com sucesso!`
+            : `✅ Supermercado "${loja.nome}" DESBLOQUEADO com sucesso!`}
+        </span>
+      );
+      setTimeout(() => setMsgRegLoja(''), 4000);
+    }
   };
 
   const prepararEdicaoLoja = (loja: Supermercado) => {
@@ -1070,7 +1223,89 @@ export default function App() {
       const novaLista = listaOperadores.filter((op) => op.id !== idOp);
       setListaOperadores(novaLista);
       localStorage.setItem(`operadores_caixa_${supermercadoAtual}`, JSON.stringify(novaLista));
+      excluirOperadorFirestore(idOp);
     }
+  };
+
+  // Login & Session Management
+  const handleLoginSucesso = (sessao: SessaoUsuario) => {
+    setPerfilAtivo(sessao.tipo);
+    localStorage.setItem('perfilAtivoTipo', sessao.tipo);
+
+    if (sessao.lojaId) {
+      setSupermercadoAtual(sessao.lojaId);
+      setNomeSupermercadoAtivo(sessao.lojaNome || 'Supermercado');
+      localStorage.setItem('supermercadoAtualId', sessao.lojaId);
+      localStorage.setItem('supermercadoNome', sessao.lojaNome || 'Supermercado');
+
+      const estSalvo = localStorage.getItem(`estoque_${sessao.lojaId}`);
+      setEstoque(estSalvo ? JSON.parse(estSalvo) : []);
+
+      const opSalvo = localStorage.getItem(`operadores_caixa_${sessao.lojaId}`);
+      if (opSalvo) {
+        try {
+          setListaOperadores(JSON.parse(opSalvo));
+        } catch (e) {}
+      }
+    }
+
+    if (sessao.tipo === 'caixa' && sessao.operadorId) {
+      setOperadorAtivoId(sessao.operadorId);
+      localStorage.setItem('operadorAtivoId', sessao.operadorId);
+    } else {
+      setOperadorAtivoId(null);
+      localStorage.removeItem('operadorAtivoId');
+    }
+
+    setTelaLoginVisivel(false);
+  };
+
+  const handleLogout = () => {
+    setTelaLoginVisivel(true);
+  };
+
+  // Active Store and Operator Resolution
+  const lojaAtualObj = listaSupermercados.find((l) => l.id === supermercadoAtual);
+  const isLojaBloqueadaPeloDono = lojaAtualObj?.status === 'bloqueado';
+  const opAtualLogado = perfilAtivo === 'caixa' ? listaOperadores.find((o) => o.id === operadorAtivoId) : null;
+
+  // Helper 1: Verifica se a loja possui o módulo habilitado pela Dona do App
+  const temPermissaoLoja = (modulo: keyof PermissoesLoja): boolean => {
+    if (perfilAtivo === 'dona_app') return true;
+    if (!lojaAtualObj || lojaAtualObj.status === 'bloqueado') return false;
+    const perms = lojaAtualObj.permissoesLoja || PERMISSOES_LOJA_PADRAO;
+    return !!perms[modulo];
+  };
+
+  // Helper 2: Condição booleana rigorosa para renderizar botões e áreas na tela
+  const temPermissaoOperador = (
+    acao: keyof PermissoesOperador,
+    moduloLoja?: keyof PermissoesLoja
+  ): boolean => {
+    // Dona do aplicativo tem acesso irrestrito
+    if (perfilAtivo === 'dona_app') return true;
+
+    // Se o supermercado foi bloqueado pela Dona do App, ninguém na loja acessa
+    if (!lojaAtualObj || lojaAtualObj.status === 'bloqueado') return false;
+
+    // Se a Dona do App desabilitou este módulo para o supermercado, não aparece para ninguém na loja
+    if (moduloLoja) {
+      const permsLoja = lojaAtualObj.permissoesLoja || PERMISSOES_LOJA_PADRAO;
+      if (!permsLoja[moduloLoja]) return false;
+    }
+
+    // Administrador do supermercado tem acesso a todos os módulos autorizados para a loja
+    if (perfilAtivo === 'admin_loja') return true;
+
+    // Funcionário / Caixa: checa se está cadastrado, ativo e se a permissão individual foi concedida
+    if (perfilAtivo === 'caixa') {
+      const op = listaOperadores.find((o) => o.id === operadorAtivoId);
+      if (!op || op.ativo === false) return false;
+      const permsOp = op.permissoes || PERMISSOES_CAIXA_PADRAO;
+      return !!permsOp[acao];
+    }
+
+    return false;
   };
 
   // Switch Active User / Session (Super Admin, Store Owner, Cashier)
@@ -1095,9 +1330,18 @@ export default function App() {
     // 1. Super Admin (Dona do App) has full access
     if (perfilAtivo === 'dona_app') return true;
 
-    // 2. Check Store Permissions (configured by Dona do App)
-    const lojaAtualConfig = listaSupermercados.find((l) => l.id === supermercadoAtual);
-    const permLoja = lojaAtualConfig?.permissoesLoja || PERMISSOES_LOJA_PADRAO;
+    // 2. Check Store Status (Blocked by App Owner)
+    if (isLojaBloqueadaPeloDono) {
+      setAvisoRestrito(
+        `🛑 ACESSO SUSPENSO: O supermercado "${nomeSupermercadoAtivo}" foi bloqueado pela Dona do Aplicativo. Motivo: ${
+          lojaAtualObj?.motivoBloqueio || 'Entre em contato com a administração do aplicativo.'
+        }`
+      );
+      return false;
+    }
+
+    // 3. Check Store Permissions (configured by Dona do App)
+    const permLoja = lojaAtualObj?.permissoesLoja || PERMISSOES_LOJA_PADRAO;
 
     if (!permLoja[tipoModuloLoja]) {
       setAvisoRestrito(
@@ -1106,20 +1350,20 @@ export default function App() {
       return false;
     }
 
-    // 3. Store Owner / Admin has full access to enabled store modules
+    // 4. Store Owner / Admin has full access to enabled store modules
     if (perfilAtivo === 'admin_loja') return true;
 
-    // 4. Cashier / Staff Operator permissions check (configured by Store Owner)
+    // 5. Cashier / Staff Operator permissions check (configured by Store Owner)
     if (perfilAtivo === 'caixa' && acaoOperador) {
       const opAtual = listaOperadores.find((o) => o.id === operadorAtivoId);
-      if (!opAtual || !opAtual.ativo) {
-        setAvisoRestrito('🔒 Operador inativo ou não selecionado. Faça login com uma conta válida.');
+      if (!opAtual || opAtual.ativo === false) {
+        setAvisoRestrito('🔒 Operador inativo ou bloqueado. Peça autorização ao Administrador do Supermercado.');
         return false;
       }
       const permOp = opAtual.permissoes || PERMISSOES_CAIXA_PADRAO;
       if (!permOp[acaoOperador]) {
         setAvisoRestrito(
-          `🔒 Acesso Restrito ao Operador: O funcionário "${opAtual.nome}" (${opAtual.cargo}) não tem permissão de "${nomeAcaoFormatado || acaoOperador}". Peça autorização ao Administrador do Supermercado.`
+          `🔒 Acesso Restrito: O funcionário "${opAtual.nome}" (${opAtual.cargo}) não tem permissão para "${nomeAcaoFormatado || acaoOperador}".`
         );
         return false;
       }
@@ -2365,50 +2609,56 @@ export default function App() {
               onChange={(e) => setBusca(e.target.value)}
             />
 
-            <button
-              className="btn"
-              style={{
-                background: '#16a34a',
-                color: '#fff',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                padding: '7px 10px',
-                whiteSpace: 'nowrap',
-                gap: '4px',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                flexShrink: 0,
-                border: 'none',
-                cursor: 'pointer',
-              }}
-              onClick={() => {
-                if (verificarPermissaoOuAvisar('estoque', 'cadastrar_produtos', 'Adicionar Produto')) {
-                  abrirCadastro('estoque');
-                }
-              }}
-              title="Adicionar Produto ao Estoque (Validade, Preço de Venda, Custo e Lote)"
-            >
-              <span>➕</span>
-              <span>Estoque</span>
-            </button>
-
-            <button
-              className="btn btn-notif"
-              onClick={() => abrirNotificacoes(produtosEstoqueBaixoCount > 0 ? 'estoque_baixo' : 'validade')}
-              title={`Notificações & Alertas (${totalNotificacoes})`}
-            >
-              🔔
-              <span
-                className="badge-notif"
-                id="badgeNotif"
+            {temPermissaoOperador('cadastrar_produtos', 'estoque') && (
+              <button
+                className="btn"
                 style={{
-                  display: totalNotificacoes > 0 ? 'block' : 'none',
-                  background: produtosEstoqueBaixoCount > 0 ? '#ef4444' : '#f59e0b',
+                  background: '#16a34a',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  padding: '7px 10px',
+                  whiteSpace: 'nowrap',
+                  gap: '4px',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                  border: 'none',
+                  cursor: 'pointer',
                 }}
-              ></span>
-            </button>
+                onClick={() => {
+                  abrirCadastro('estoque');
+                }}
+                title="Adicionar Produto ao Estoque (Validade, Preço de Venda, Custo e Lote)"
+              >
+                <span>➕</span>
+                <span>Estoque</span>
+              </button>
+            )}
+
+            {(perfilAtivo === 'dona_app' ||
+              perfilAtivo === 'admin_loja' ||
+              temPermissaoOperador('ver_relatorios', 'relatorios') ||
+              temPermissaoOperador('cadastrar_produtos', 'estoque')) && (
+              <button
+                className="btn btn-notif"
+                onClick={() => abrirNotificacoes(produtosEstoqueBaixoCount > 0 ? 'estoque_baixo' : 'validade')}
+                title={`Notificações & Alertas (${totalNotificacoes})`}
+              >
+                🔔
+                <span
+                  className="badge-notif"
+                  id="badgeNotif"
+                  style={{
+                    display: totalNotificacoes > 0 ? 'block' : 'none',
+                    background: produtosEstoqueBaixoCount > 0 ? '#ef4444' : '#f59e0b',
+                  }}
+                ></span>
+              </button>
+            )}
+
             <button className="btn btn-cam" onClick={abrirLeitorGeral} title="Escanear Código">
               📷
             </button>
@@ -2416,42 +2666,70 @@ export default function App() {
         </div>
       </header>
 
-      {/* SELETOR DE PERFIL E SESSÃO */}
-      <div className="seletor-perfil-bar">
-        <div className="perfil-tag-ativo">
-          <span>👤 Perfil:</span>
-          <select
-            className="select-perfil-header"
-            value={perfilAtivo === 'caixa' ? `caixa_${operadorAtivoId || ''}` : perfilAtivo}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val === 'dona_app') {
-                trocarPerfilAtivo('dona_app');
-              } else if (val === 'admin_loja') {
-                trocarPerfilAtivo('admin_loja');
-              } else if (val.startsWith('caixa_')) {
-                const opId = val.replace('caixa_', '');
-                trocarPerfilAtivo('caixa', opId);
-              }
-            }}
-            title="Alternar Perfil Operacional"
-          >
-            <optgroup label="👑 Super Administração">
-              <option value="dona_app">👑 Dona do Aplicativo (Acesso Total)</option>
-            </optgroup>
-            <optgroup label="🏢 Administração do Supermercado">
-              <option value="admin_loja">🏢 Gerência / Dono ({nomeSupermercadoAtivo})</option>
-            </optgroup>
-            {listaOperadores.length > 0 && (
-              <optgroup label="👤 Operadores de Caixa & Equipe">
-                {listaOperadores.map((op) => (
-                  <option key={op.id} value={`caixa_${op.id}`}>
-                    👤 {op.nome} ({op.cargo}) {!op.ativo ? '[INATIVO]' : ''}
+      {/* SELETOR DE PERFIL E SESSÃO SEGURA */}
+      <div className="seletor-perfil-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {perfilAtivo === 'dona_app' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ background: '#f3e8ff', color: '#7e22ce', padding: '4px 10px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 800, border: '1px solid #d8b4fe' }}>
+                👑 Dona do App (Master)
+              </span>
+              <select
+                className="select-perfil-header"
+                value={supermercadoAtual}
+                onChange={(e) => {
+                  const lojaSel = listaSupermercados.find((l) => l.id === e.target.value);
+                  if (lojaSel) alternarLojaAtiva(lojaSel);
+                }}
+                style={{ fontSize: '0.82rem', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff' }}
+                title="Alternar visualização de loja como Dono do App"
+              >
+                {listaSupermercados.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    🏪 {l.nome} {l.status === 'bloqueado' ? '🚫 [BLOQUEADA]' : ''}
                   </option>
                 ))}
-              </optgroup>
-            )}
-          </select>
+              </select>
+            </div>
+          )}
+
+          {perfilAtivo === 'admin_loja' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 800, border: '1px solid #86efac' }}>
+                🏢 Gerência / Dono: {nomeSupermercadoAtivo}
+              </span>
+            </div>
+          )}
+
+          {perfilAtivo === 'caixa' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '4px 10px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 800, border: '1px solid #7dd3fc' }}>
+                🛒 {opAtualLogado ? `${opAtualLogado.nome} (${opAtualLogado.cargo})` : 'Operador de Caixa'} • {nomeSupermercadoAtivo}
+              </span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{
+              background: '#f1f5f9',
+              color: '#334155',
+              border: '1px solid #cbd5e1',
+              borderRadius: '6px',
+              padding: '4px 8px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+            title="Sair da sessão ou alternar usuário com login seguro"
+          >
+            <span>🚪</span>
+            <span>Trocar / Sair</span>
+          </button>
         </div>
 
         <div className="status-sync-topo" title="Status de Sincronização em Tempo Real">
@@ -2460,7 +2738,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* SIDEBAR (MENU DE TRÊS TRAÇOS) */}
+      {/* SIDEBAR (MENU DE TRÊS TRAÇOS COM ISOLAMENTO DE ACESSO) */}
       <div
         className="sidebar-overlay"
         id="sidebarOverlay"
@@ -2491,67 +2769,70 @@ export default function App() {
           </button>
         </div>
         <div className="sidebar-menu">
-          <div
-            className="sidebar-item"
-            style={{ fontWeight: 600, background: '#f0fdf4', color: '#166534', borderRadius: '6px' }}
-            onClick={() => {
-              abrirNotificacoes('estoque_baixo');
-              fecharMenu();
-            }}
-          >
-            📦 Alertas de Reposição & Estoque Baixo ({produtosEstoqueBaixoCount} itens)
-          </div>
+          {(temPermissaoOperador('inteligencia_estoque', 'inteligencia_estoque') ||
+            temPermissaoOperador('cadastrar_produtos', 'estoque')) && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 600, background: '#f0fdf4', color: '#166534', borderRadius: '6px' }}
+              onClick={() => {
+                abrirNotificacoes('estoque_baixo');
+                fecharMenu();
+              }}
+            >
+              📦 Alertas de Reposição & Estoque Baixo ({produtosEstoqueBaixoCount} itens)
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            style={{ fontWeight: 600, background: '#e0f2fe', color: '#0369a1', borderRadius: '6px' }}
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('gestao_caixa', 'gestao_caixa', 'Gestão de Caixa / Turno')) {
+          {temPermissaoOperador('gestao_caixa', 'gestao_caixa') && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 600, background: '#e0f2fe', color: '#0369a1', borderRadius: '6px' }}
+              onClick={() => {
                 setModalCaixaVisivel(true);
                 fecharMenu();
-              }
-            }}
-          >
-            💵 Gestão de Caixa (Abertura, Sangria & Turno) {!sessaoCaixaAtiva || sessaoCaixaAtiva.status === 'fechado' ? '🔴 Fechado' : '🟢 Aberto'}
-          </div>
+              }}
+            >
+              💵 Gestão de Caixa (Abertura, Sangria & Turno) {!sessaoCaixaAtiva || sessaoCaixaAtiva.status === 'fechado' ? '🔴 Fechado' : '🟢 Aberto'}
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            style={{ fontWeight: 600, background: '#fef2f2', color: '#991b1b', borderRadius: '6px' }}
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('devedores', 'gerenciar_devedores', 'Área de Devedores / Fiado')) {
+          {temPermissaoOperador('gerenciar_devedores', 'devedores') && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 600, background: '#fef2f2', color: '#991b1b', borderRadius: '6px' }}
+              onClick={() => {
                 setModalDevedoresVisivel(true);
                 fecharMenu();
-              }
-            }}
-          >
-            💳 Área de Devedores / Fiado ({clientesDevedores.filter((c) => c.saldoDevedorTotal > 0).length} com saldo devedor)
-          </div>
+              }}
+            >
+              💳 Área de Devedores / Fiado ({clientesDevedores.filter((c) => c.saldoDevedorTotal > 0).length} com saldo devedor)
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('etiquetas', 'imprimir_etiquetas', 'Imprimir Etiquetas')) {
+          {temPermissaoOperador('imprimir_etiquetas', 'etiquetas') && (
+            <div
+              className="sidebar-item"
+              onClick={() => {
                 setModalEtiquetasVisivel(true);
                 fecharMenu();
-              }
-            }}
-          >
-            🏷️ Imprimir Etiquetas de Prateleira
-          </div>
+              }}
+            >
+              🏷️ Imprimir Etiquetas de Prateleira
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            style={{ fontWeight: 700, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('estoque', 'cadastrar_produtos', 'Cadastrar Produtos')) {
+          {temPermissaoOperador('cadastrar_produtos', 'estoque') && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 700, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}
+              onClick={() => {
                 abrirCadastro('estoque');
                 fecharMenu();
-              }
-            }}
-          >
-            ➕ Adicionar Item em Estoque (Validade, Preços & Qtd)
-          </div>
+              }}
+            >
+              ➕ Adicionar Item em Estoque (Validade, Preços & Qtd)
+            </div>
+          )}
 
           {perfilAtivo === 'dona_app' && (
             <div
@@ -2566,53 +2847,60 @@ export default function App() {
             </div>
           )}
 
-          <div
-            className="sidebar-item"
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('relatorios', 'ver_relatorios', 'Relatório de Vendas')) {
+          {temPermissaoOperador('ver_relatorios', 'relatorios') && (
+            <div
+              className="sidebar-item"
+              onClick={() => {
                 abrirRelatorioVendas();
                 fecharMenu();
-              }
-            }}
-          >
-            🧾 Relatório de Vendas (Histórico, Estorno & Cupom)
-          </div>
+              }}
+            >
+              🧾 Relatório de Vendas (Histórico, Estorno & Cupom)
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('relatorios', 'ver_relatorios', 'Relatórios Financeiros')) {
+          {(temPermissaoOperador('ver_relatorios', 'relatorios') ||
+            temPermissaoOperador('cadastrar_produtos', 'estoque')) && (
+            <div
+              className="sidebar-item"
+              onClick={() => {
                 abrirRelatorio();
                 fecharMenu();
-              }
-            }}
-          >
-            📊 Relatório de Estoque (Filtros & Validades)
-          </div>
+              }}
+            >
+              📊 Relatório de Estoque (Filtros & Validades)
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            onClick={() => {
-              if (verificarPermissaoOuAvisar('graficos', 'ver_graficos', 'Gráficos & Inteligência')) {
+          {temPermissaoOperador('ver_graficos', 'graficos') && (
+            <div
+              className="sidebar-item"
+              onClick={() => {
                 abrirGraficosVendas();
                 fecharMenu();
-              }
-            }}
-          >
-            📈 Gráficos & Inteligência de Estoque (Dono)
-          </div>
+              }}
+            >
+              📈 Gráficos & Inteligência de Estoque
+            </div>
+          )}
 
-          <div
-            className="sidebar-item"
-            onClick={() => {
-              abrirRelatorioCatalogo();
-              fecharMenu();
-            }}
-          >
-            🗂️ Catálogo Global
-          </div>
+          {(perfilAtivo === 'dona_app' ||
+            perfilAtivo === 'admin_loja' ||
+            temPermissaoOperador('cadastrar_produtos', 'estoque')) && (
+            <div
+              className="sidebar-item"
+              onClick={() => {
+                abrirRelatorioCatalogo();
+                fecharMenu();
+              }}
+            >
+              🗂️ Catálogo Global
+            </div>
+          )}
 
-          {perfilAtivo === 'admin_loja' || perfilAtivo === 'dona_app' ? (
+          {(perfilAtivo === 'admin_loja' ||
+            perfilAtivo === 'dona_app' ||
+            temPermissaoOperador('gerenciar_equipe', 'usuarios')) && (
             <div
               className="sidebar-item"
               onClick={() => {
@@ -2622,7 +2910,7 @@ export default function App() {
             >
               👥 Cadastrar Caixas & Permissões
             </div>
-          ) : null}
+          )}
 
           {perfilAtivo === 'dona_app' && (
             <div
@@ -2635,77 +2923,188 @@ export default function App() {
               🏢 Cadastrar / Gerenciar Lojas (Dona do App)
             </div>
           )}
+
+          <div
+            className="sidebar-item"
+            style={{ marginTop: '12px', borderTop: '1px solid #e2e8f0', color: '#dc2626', fontWeight: 600 }}
+            onClick={() => {
+              fecharMenu();
+              handleLogout();
+            }}
+          >
+            🚪 Sair da Conta / Trocar Usuário
+          </div>
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <main className="espaco-topo">
-        <div className="painel-alertas" id="painel-alertas">
-          {produtosEstoqueBaixoCount > 0 && (
+        {isLojaBloqueadaPeloDono && perfilAtivo !== 'dona_app' ? (
+          <div style={{ maxWidth: '600px', margin: '30px auto', padding: '16px' }}>
             <div
-              className="alerta alerta-aviso"
               style={{
-                background: '#fff7ed',
-                color: '#c2410c',
-                border: '1px solid #fed7aa',
-                cursor: 'pointer',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                background: '#fef2f2',
+                border: '2px solid #ef4444',
+                borderRadius: '16px',
+                padding: '32px 24px',
+                textAlign: 'center',
+                boxShadow: '0 10px 25px rgba(239, 68, 68, 0.15)',
               }}
-              onClick={() => abrirNotificacoes('estoque_baixo')}
             >
-              <span>📦 {produtosEstoqueBaixoCount} produto(s) com estoque baixo (≤ {limiarEstoqueMinimo} un). Toque para ver e repor.</span>
-              <span style={{ fontSize: '0.75rem', textDecoration: 'underline' }}>Repor Agora →</span>
+              <div style={{ fontSize: '3.5rem', marginBottom: '12px' }}>🛑</div>
+              <h2 style={{ color: '#991b1b', fontSize: '1.35rem', fontWeight: 800, marginBottom: '8px' }}>
+                Acesso do Supermercado Suspenso
+              </h2>
+              <p style={{ color: '#7f1d1d', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '14px' }}>
+                O supermercado <b>{nomeSupermercadoAtivo}</b> está temporariamente bloqueado pela <b>Dona do Aplicativo</b>.
+              </p>
+              {lojaAtualObj?.motivoBloqueio && (
+                <div
+                  style={{
+                    background: '#fff',
+                    border: '1px dashed #f87171',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    color: '#b91c1c',
+                    fontSize: '0.88rem',
+                    marginBottom: '20px',
+                    textAlign: 'left',
+                  }}
+                >
+                  <b>Motivo informado pelo Dono do App:</b>
+                  <div style={{ marginTop: '4px', color: '#7f1d1d' }}>{lojaAtualObj.motivoBloqueio}</div>
+                </div>
+              )}
+              <p style={{ color: '#64748b', fontSize: '0.82rem', marginBottom: '22px' }}>
+                Por segurança, os módulos e acessos de equipe foram pausados para este supermercado.
+              </p>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  padding: '12px 24px',
+                  fontWeight: 700,
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.92rem',
+                }}
+                onClick={handleLogout}
+              >
+                🚪 Sair / Trocar de Usuário
+              </button>
             </div>
-          )}
-
-          {vencidosOuHoje.length > 0 && (
-            <div className="alerta alerta-erro" onClick={() => abrirNotificacoes('validade')}>
-              ❌ {vencidosOuHoje.length} produto(s) vencido(s) ou a vencer hoje. Toque para ver.
+          </div>
+        ) : perfilAtivo === 'caixa' && opAtualLogado && opAtualLogado.ativo === false ? (
+          <div style={{ maxWidth: '600px', margin: '30px auto', padding: '16px' }}>
+            <div
+              style={{
+                background: '#fef2f2',
+                border: '2px solid #ef4444',
+                borderRadius: '16px',
+                padding: '32px 24px',
+                textAlign: 'center',
+                boxShadow: '0 10px 25px rgba(239, 68, 68, 0.15)',
+              }}
+            >
+              <div style={{ fontSize: '3.5rem', marginBottom: '12px' }}>🚫</div>
+              <h2 style={{ color: '#991b1b', fontSize: '1.35rem', fontWeight: 800, marginBottom: '8px' }}>
+                Acesso de Funcionário Desativado
+              </h2>
+              <p style={{ color: '#7f1d1d', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '20px' }}>
+                Seu cadastro de operador (<b>{opAtualLogado.nome}</b>) foi inativado ou bloqueado pelo Administrador do <b>{nomeSupermercadoAtivo}</b>.
+              </p>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  padding: '12px 24px',
+                  fontWeight: 700,
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.92rem',
+                }}
+                onClick={handleLogout}
+              >
+                🚪 Sair / Trocar de Usuário
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="painel-alertas" id="painel-alertas">
+              {produtosEstoqueBaixoCount > 0 && (
+                <div
+                  className="alerta alerta-aviso"
+                  style={{
+                    background: '#fff7ed',
+                    color: '#c2410c',
+                    border: '1px solid #fed7aa',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                  onClick={() => abrirNotificacoes('estoque_baixo')}
+                >
+                  <span>📦 {produtosEstoqueBaixoCount} produto(s) com estoque baixo (≤ {limiarEstoqueMinimo} un). Toque para ver e repor.</span>
+                  <span style={{ fontSize: '0.75rem', textDecoration: 'underline' }}>Repor Agora →</span>
+                </div>
+              )}
 
-        <div className="grid-produtos" id="grid-produtos">
-          {listaAgrupada.length === 0 ? (
-            <div className="vazio">Nenhum produto cadastrado no estoque desta loja.</div>
-          ) : (
-            listaAgrupada.map((p) => {
-              const primeiraValidade = p.lotes[0].validade;
-              const primeiroLote = p.lotes[0].lote || '';
+              {vencidosOuHoje.length > 0 && (
+                <div className="alerta alerta-erro" onClick={() => abrirNotificacoes('validade')}>
+                  ❌ {vencidosOuHoje.length} produto(s) vencido(s) ou a vencer hoje. Toque para ver.
+                </div>
+              )}
+            </div>
 
-              return (
-                <div className="card-produto" key={p.codigo}>
-                  <div
-                    className="foto-produto"
-                    onClick={() => abrirVenda(p.codigo, primeiraValidade, primeiroLote)}
-                  >
-                    {p.foto ? <img src={p.foto} alt={p.nome} /> : 'Sem imagem'}
-                  </div>
-                  <div className="info-card">
-                    <div>
+            <div className="grid-produtos" id="grid-produtos">
+              {listaAgrupada.length === 0 ? (
+                <div className="vazio">Nenhum produto cadastrado no estoque desta loja.</div>
+              ) : (
+                listaAgrupada.map((p) => {
+                  const primeiraValidade = p.lotes[0].validade;
+                  const primeiroLote = p.lotes[0].lote || '';
+
+                  return (
+                    <div className="card-produto" key={p.codigo}>
                       <div
-                        className="nome-prod"
+                        className="foto-produto"
                         onClick={() => abrirVenda(p.codigo, primeiraValidade, primeiroLote)}
                       >
-                        {p.nome}
+                        {p.foto ? <img src={p.foto} alt={p.nome} /> : 'Sem imagem'}
                       </div>
-                      <div className="detalhe">Cód: {p.codigo}</div>
-                    </div>
-                    <div style={{ marginTop: '4px' }}>
-                      <div className="detalhe">
-                        Estoque Total: <b>{p.qtdTotal} un</b>
+                      <div className="info-card">
+                        <div>
+                          <div
+                            className="nome-prod"
+                            onClick={() => abrirVenda(p.codigo, primeiraValidade, primeiroLote)}
+                          >
+                            {p.nome}
+                          </div>
+                          <div className="detalhe">Cód: {p.codigo}</div>
+                        </div>
+                        <div style={{ marginTop: '4px' }}>
+                          <div className="detalhe">
+                            Estoque Total: <b>{p.qtdTotal} un</b>
+                          </div>
+                          <div className="detalhe preco-destaque">R$ {p.preco_venda.toFixed(2)}</div>
+                        </div>
                       </div>
-                      <div className="detalhe preco-destaque">R$ {p.preco_venda.toFixed(2)}</div>
                     </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       {/* FULL REPORT SCREEN */}
@@ -3397,10 +3796,43 @@ export default function App() {
                               Loja Selecionada
                             </span>
                           )}
+                          {loja.status === 'bloqueado' ? (
+                            <span
+                              style={{
+                                background: '#fee2e2',
+                                color: '#991b1b',
+                                fontSize: '0.72rem',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontWeight: 700,
+                                border: '1px solid #fca5a5',
+                              }}
+                            >
+                              🚫 BLOQUEADO PELO DONO DO APP
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                background: '#dcfce7',
+                                color: '#15803d',
+                                fontSize: '0.72rem',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              🟢 Ativo / Liberado
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--texto-secundario)', marginTop: '2px' }}>
                           CNPJ: <b>{loja.cnpj}</b> | Cadastrada em: {loja.dataCadastro || 'N/A'}
                         </div>
+                        {loja.status === 'bloqueado' && loja.motivoBloqueio && (
+                          <div style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: '2px', background: '#fff1f2', padding: '3px 8px', borderRadius: '4px', border: '1px dashed #f87171' }}>
+                            Motivo do Bloqueio: <b>{loja.motivoBloqueio}</b>
+                          </div>
+                        )}
                         <div
                           style={{
                             fontSize: '0.8rem',
@@ -3456,6 +3888,19 @@ export default function App() {
                           </button>
                         )}
                         <button
+                          className="btn-acao-rel"
+                          style={{
+                            background: loja.status === 'bloqueado' ? '#dcfce7' : '#fee2e2',
+                            color: loja.status === 'bloqueado' ? '#15803d' : '#991b1b',
+                            border: loja.status === 'bloqueado' ? '1px solid #86efac' : '1px solid #fca5a5',
+                            fontWeight: 700,
+                          }}
+                          onClick={() => alternarBloqueioSupermercado(loja.id)}
+                          title="Bloquear ou Desbloquear o acesso do supermercado"
+                        >
+                          {loja.status === 'bloqueado' ? '🔓 Desbloquear' : '🚫 Bloquear'}
+                        </button>
+                        <button
                           className="btn-acao-rel btn-editar-rel"
                           onClick={() => prepararEdicaoLoja(loja)}
                         >
@@ -3479,12 +3924,53 @@ export default function App() {
             /* SEÇÃO 2: BANCO DE DADOS MASTER - DONA DO APP */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '14px', color: '#0369a1' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  👑 Acesso Exclusivo da Dona do Aplicativo - Gerenciador Geral de Banco de Dados
-                </h3>
-                <p style={{ fontSize: '0.84rem', margin: 0, color: '#0284c7' }}>
-                  Como proprietária do aplicativo, você possui privilégio master para consultar, <b>editar informações</b> ou <b>excluir permanentemente qualquer item</b> do Catálogo Global ou do Estoque de qualquer loja cadastrada no banco de dados.
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      👑 Acesso Exclusivo da Dona do Aplicativo - Gerenciador Geral de Banco de Dados
+                    </h3>
+                    <p style={{ fontSize: '0.84rem', margin: 0, color: '#0284c7' }}>
+                      Conectado ao Banco de Dados Dedicado: <b>appestoqueprodutos-bb92d</b> (Firebase Firestore)
+                    </p>
+                  </div>
+                  <button
+                    className="btn-acao-rel"
+                    style={{
+                      background: '#0284c7',
+                      color: '#ffffff',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      border: 'none',
+                      cursor: migrandoBanco ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={handleMigrarParaNovoBanco}
+                    disabled={migrandoBanco}
+                    title="Exporta e sincroniza todos os cadastros e dados para o banco appestoqueprodutos-bb92d"
+                  >
+                    {migrandoBanco ? '⏳ Migrando Registros...' : '📤 Sincronizar/Migrar Todos os Cadastros'}
+                  </button>
+                </div>
+                {msgMigracao && (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      padding: '8px 12px',
+                      background: msgMigracao.startsWith('✅') ? '#dcfce7' : msgMigracao.startsWith('⚠️') ? '#fef3c7' : '#eff6ff',
+                      color: msgMigracao.startsWith('✅') ? '#166534' : msgMigracao.startsWith('⚠️') ? '#92400e' : '#1e40af',
+                      borderRadius: '6px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      border: '1px solid rgba(0,0,0,0.08)',
+                    }}
+                  >
+                    {msgMigracao}
+                  </div>
+                )}
               </div>
 
               {/* FILTROS E BUSCA DO BANCO DE DADOS */}
@@ -4514,6 +5000,14 @@ export default function App() {
         onSalvarCliente={handleSalvarClienteDevedor}
         onExcluirCliente={handleExcluirClienteDevedor}
         onRegistrarPagamento={handleRegistrarPagamentoFiado}
+      />
+
+      {/* TELA DE LOGIN & CONTROLE DE ACESSO */}
+      <TelaLogin
+        visivel={telaLoginVisivel}
+        listaSupermercados={listaSupermercados}
+        onLoginSucesso={handleLoginSucesso}
+        onFechar={perfilAtivo ? () => setTelaLoginVisivel(false) : undefined}
       />
     </>
   );

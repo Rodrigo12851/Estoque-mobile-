@@ -269,41 +269,126 @@ export async function inicializarDadosIniciaisFirestore(
   lojasIniciais: Supermercado[],
   catalogoInicial: ProdutoCatalogo[],
   operadoresIniciais: OperadorCaixa[],
-  vendasIniciais: Venda[]
+  vendasIniciais: Venda[],
+  estoqueInicial?: ItemEstoque[],
+  devedoresIniciais?: ClienteDevedor[]
 ) {
   try {
-    // Check supermercados
+    // 1. Supermercados
     const snapLojas = await getDocs(collection(db, 'supermercados'));
-    if (snapLojas.empty) {
+    if (snapLojas.empty && lojasIniciais.length > 0) {
       for (const l of lojasIniciais) {
         await salvarSupermercadoFirestore(l);
       }
     }
 
-    // Check catalogo
+    // 2. Catálogo Global de Produtos
     const snapCat = await getDocs(collection(db, 'produtos_catalogo'));
-    if (snapCat.empty) {
+    if (snapCat.empty && catalogoInicial.length > 0) {
       for (const p of catalogoInicial) {
         await salvarProdutoCatalogoFirestore(p);
       }
     }
 
-    // Check operadores
+    // 3. Operadores de Caixa
     const snapOp = await getDocs(collection(db, 'operadores'));
-    if (snapOp.empty) {
+    if (snapOp.empty && operadoresIniciais.length > 0) {
       for (const o of operadoresIniciais) {
         await salvarOperadorFirestore(o);
       }
     }
 
-    // Check vendas
+    // 4. Vendas
     const snapVen = await getDocs(collection(db, 'vendas'));
-    if (snapVen.empty) {
+    if (snapVen.empty && vendasIniciais.length > 0) {
       for (const v of vendasIniciais) {
         await salvarVendaFirestore(v);
       }
     }
+
+    // 5. Estoque
+    if (estoqueInicial && estoqueInicial.length > 0) {
+      const snapEst = await getDocs(collection(db, 'estoque'));
+      if (snapEst.empty) {
+        for (const item of estoqueInicial) {
+          await salvarItemEstoqueFirestore(item, item.lojaId || lojasIniciais[0]?.id || 'loja_central');
+        }
+      }
+    }
+
+    // 6. Clientes Devedores
+    if (devedoresIniciais && devedoresIniciais.length > 0) {
+      const snapDev = await getDocs(collection(db, 'clientes_devedores'));
+      if (snapDev.empty) {
+        for (const c of devedoresIniciais) {
+          await salvarClienteDevedorFirestore(c);
+        }
+      }
+    }
   } catch (err) {
     console.warn('Aviso na inicializacao dos dados padrao Firestore:', err);
+  }
+}
+
+// Migração completa de todos os cadastros e dados locais para o novo banco de dados Firestore
+export async function migrarTodosCadastrosParaNovoBanco(params: {
+  supermercados: Supermercado[];
+  catalogo: ProdutoCatalogo[];
+  estoque: ItemEstoque[];
+  operadores: OperadorCaixa[];
+  vendas: Venda[];
+  clientesDevedores: ClienteDevedor[];
+}): Promise<{ sucesso: boolean; totalItens: number; detalhe: string }> {
+  try {
+    let count = 0;
+
+    // Supermercados
+    for (const loja of params.supermercados) {
+      await salvarSupermercadoFirestore(loja);
+      count++;
+    }
+
+    // Catálogo
+    for (const prod of params.catalogo) {
+      await salvarProdutoCatalogoFirestore(prod);
+      count++;
+    }
+
+    // Estoque
+    for (const item of params.estoque) {
+      await salvarItemEstoqueFirestore(item, item.lojaId || params.supermercados[0]?.id || 'loja_central');
+      count++;
+    }
+
+    // Operadores
+    for (const op of params.operadores) {
+      await salvarOperadorFirestore(op);
+      count++;
+    }
+
+    // Vendas
+    for (const venda of params.vendas) {
+      await salvarVendaFirestore(venda);
+      count++;
+    }
+
+    // Clientes Fiado / Devedores
+    for (const dev of params.clientesDevedores) {
+      await salvarClienteDevedorFirestore(dev);
+      count++;
+    }
+
+    return {
+      sucesso: true,
+      totalItens: count,
+      detalhe: `${count} registros migrados com sucesso para o banco appestoqueprodutos-bb92d!`,
+    };
+  } catch (err) {
+    console.error('Erro na migracao para o novo banco:', err);
+    return {
+      sucesso: false,
+      totalItens: 0,
+      detalhe: `Erro ao migrar dados: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
