@@ -634,6 +634,22 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
     }
   }, [estoque, resumoItens]);
 
+  // Helper for formatting Y-Axis values compactly (e.g., R$10k, R$7.5k, R$500)
+  const formatarValorYAxis = (v: any) => {
+    const num = Number(v) || 0;
+    if (num >= 1000000) return `R$${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) {
+      const k = num / 1000;
+      return k % 1 === 0 ? `R$${k}k` : `R$${k.toFixed(1)}k`;
+    }
+    return `R$${num}`;
+  };
+
+  const truncarTexto = (txt: string, max = 13) => {
+    if (!txt) return '';
+    return txt.length > max ? `${txt.substring(0, max)}...` : txt;
+  };
+
   // Overall totals
   const faturamentoTotalGeral = vendasValidas.reduce((acc, v) => acc + (Number(v.valorTotal) || 0), 0);
   const totalEstornosGeral = vendasEstornadas.reduce((acc, v) => acc + (Number(v.valorTotal) || 0), 0);
@@ -656,129 +672,159 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
         overflow: 'hidden',
       }}
     >
-      {/* CABEÇALHO */}
-      <div className="cabecalho-relatorio">
-        <h2>📈 Gráficos & Inteligência de Estoque ({nomeLoja})</h2>
-        <button className="btn-voltar-rel" onClick={onFechar}>
+      {/* CABEÇALHO FIXO */}
+      <div className="cabecalho-relatorio" style={{ flexShrink: 0 }}>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0, fontSize: '0.92rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span>📈</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Gráficos & Inteligência ({nomeLoja})</span>
+        </h2>
+        <button className="btn-voltar-rel" onClick={onFechar} style={{ flexShrink: 0, padding: '6px 12px', borderRadius: '6px', background: 'rgba(255,255,255,0.15)' }}>
           ✕ Fechar
         </button>
       </div>
 
-      {/* CORPO */}
-      <div className="corpo-relatorio-cheio" style={{ gap: '16px', display: 'flex', flexDirection: 'column' }}>
-        {/* NAVEGAÇÃO DE ABAS */}
-        <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', flexWrap: 'wrap' }}>
-          <button
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              background: abaAtiva === 'grafico' ? '#0284c7' : '#f1f5f9',
-              color: abaAtiva === 'grafico' ? '#ffffff' : '#475569',
-            }}
-            onClick={() => setAbaAtiva('grafico')}
-          >
-            📊 Faturamento
-          </button>
+      {/* BARRA DE NAVEGAÇÃO DE ABAS FIXA E ROLÁVEL HORIZONTALMENTE */}
+      <div
+        className="barra-abas-graficos"
+        style={{
+          display: 'flex',
+          gap: '8px',
+          padding: '10px 14px',
+          background: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          overflowX: 'auto',
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <button
+          style={{
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            flexShrink: 0,
+            background: abaAtiva === 'grafico' ? '#0284c7' : '#f1f5f9',
+            color: abaAtiva === 'grafico' ? '#ffffff' : '#475569',
+            boxShadow: abaAtiva === 'grafico' ? '0 2px 4px rgba(2, 132, 199, 0.25)' : 'none',
+          }}
+          onClick={() => setAbaAtiva('grafico')}
+        >
+          📊 Faturamento
+        </button>
 
-          <button
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              background: abaAtiva === 'devolucoes' ? '#dc2626' : '#f1f5f9',
-              color: abaAtiva === 'devolucoes' ? '#ffffff' : '#475569',
-            }}
-            onClick={() => setAbaAtiva('devolucoes')}
-          >
-            🔄 Devoluções & Estornos ({vendasEstornadas.length})
-          </button>
+        <button
+          style={{
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            flexShrink: 0,
+            background: abaAtiva === 'devolucoes' ? '#dc2626' : '#f1f5f9',
+            color: abaAtiva === 'devolucoes' ? '#ffffff' : '#475569',
+            boxShadow: abaAtiva === 'devolucoes' ? '0 2px 4px rgba(220, 38, 38, 0.25)' : 'none',
+          }}
+          onClick={() => setAbaAtiva('devolucoes')}
+        >
+          🔄 Devoluções & Estornos ({vendasEstornadas.length})
+        </button>
 
-          <button
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              background: abaAtiva === 'perdas' ? '#d97706' : '#f1f5f9',
-              color: abaAtiva === 'perdas' ? '#ffffff' : '#475569',
-            }}
-            onClick={() => setAbaAtiva('perdas')}
-          >
-            🛑 Gráfico de Perdas & Vencidos
-          </button>
+        <button
+          style={{
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            flexShrink: 0,
+            background: abaAtiva === 'perdas' ? '#d97706' : '#f1f5f9',
+            color: abaAtiva === 'perdas' ? '#ffffff' : '#475569',
+            boxShadow: abaAtiva === 'perdas' ? '0 2px 4px rgba(217, 119, 6, 0.25)' : 'none',
+          }}
+          onClick={() => setAbaAtiva('perdas')}
+        >
+          🛑 Perdas & Vencidos
+        </button>
 
-          <button
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              background: abaAtiva === 'estoque_chart' ? '#4f46e5' : '#f1f5f9',
-              color: abaAtiva === 'estoque_chart' ? '#ffffff' : '#475569',
-            }}
-            onClick={() => setAbaAtiva('estoque_chart')}
-          >
-            📦 Visão Geral do Estoque
-          </button>
+        <button
+          style={{
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            flexShrink: 0,
+            background: abaAtiva === 'estoque_chart' ? '#4f46e5' : '#f1f5f9',
+            color: abaAtiva === 'estoque_chart' ? '#ffffff' : '#475569',
+            boxShadow: abaAtiva === 'estoque_chart' ? '0 2px 4px rgba(79, 70, 229, 0.25)' : 'none',
+          }}
+          onClick={() => setAbaAtiva('estoque_chart')}
+        >
+          📦 Visão Geral do Estoque
+        </button>
 
-          <button
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              background: abaAtiva === 'ranking' ? '#0284c7' : '#f1f5f9',
-              color: abaAtiva === 'ranking' ? '#ffffff' : '#475569',
-            }}
-            onClick={() => setAbaAtiva('ranking')}
-          >
-            🏆 Ranking de Vendas
-          </button>
+        <button
+          style={{
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            flexShrink: 0,
+            background: abaAtiva === 'ranking' ? '#0284c7' : '#f1f5f9',
+            color: abaAtiva === 'ranking' ? '#ffffff' : '#475569',
+            boxShadow: abaAtiva === 'ranking' ? '0 2px 4px rgba(2, 132, 199, 0.25)' : 'none',
+          }}
+          onClick={() => setAbaAtiva('ranking')}
+        >
+          🏆 Ranking de Vendas
+        </button>
 
-          <button
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              background: abaAtiva === 'inteligencia' ? '#16a34a' : '#f1f5f9',
-              color: abaAtiva === 'inteligencia' ? '#ffffff' : '#475569',
-            }}
-            onClick={() => setAbaAtiva('inteligencia')}
-          >
-            💡 Inteligência de Estoque (Dono)
-          </button>
-        </div>
+        <button
+          style={{
+            padding: '7px 12px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: 600,
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            flexShrink: 0,
+            background: abaAtiva === 'inteligencia' ? '#16a34a' : '#f1f5f9',
+            color: abaAtiva === 'inteligencia' ? '#ffffff' : '#475569',
+            boxShadow: abaAtiva === 'inteligencia' ? '0 2px 4px rgba(22, 163, 74, 0.25)' : 'none',
+          }}
+          onClick={() => setAbaAtiva('inteligencia')}
+        >
+          💡 Inteligência (Dono)
+        </button>
+      </div>
 
+      {/* CORPO COM ROLAGEM */}
+      <div className="corpo-relatorio-cheio" style={{ gap: '14px', display: 'flex', flexDirection: 'column', paddingBottom: '24px', overflowX: 'hidden' }}>
         {/* ABA 1: GRÁFICOS DE FATURAMENTO */}
         {abaAtiva === 'grafico' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="aba-conteudo-painel" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             {/* CONTROLES E SELETORES */}
             <div className="painel-filtros-grafico">
               <div className="grupo-filtro-periodo">
                 <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Período:</span>
-                <div style={{ display: 'flex', gap: '4px', flex: 1, width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', width: '100%' }}>
                   {(['dia', 'semana', 'mes', 'ano'] as const).map((p) => (
                     <button
                       key={p}
                       style={{
-                        flex: 1,
-                        padding: '6px 4px',
+                        padding: '7px 4px',
                         borderRadius: '6px',
                         border: '1px solid #cbd5e1',
                         fontSize: '0.78rem',
@@ -792,7 +838,7 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                       onClick={() => setPeriodoGrafico(p)}
                     >
                       {p === 'dia' && 'Por Dia'}
-                      {p === 'semana' && 'Por Semana'}
+                      {p === 'semana' && 'Por Sem.'}
                       {p === 'mes' && 'Por Mês'}
                       {p === 'ano' && 'Por Ano'}
                     </button>
@@ -802,11 +848,10 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
 
               <div className="grupo-filtro-vis">
                 <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Visualização:</span>
-                <div style={{ display: 'flex', gap: '4px', flex: 1, width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', width: '100%' }}>
                   <button
                     style={{
-                      flex: 1,
-                      padding: '6px 8px',
+                      padding: '7px 8px',
                       borderRadius: '6px',
                       border: '1px solid #cbd5e1',
                       fontSize: '0.78rem',
@@ -823,8 +868,7 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                   </button>
                   <button
                     style={{
-                      flex: 1,
-                      padding: '6px 8px',
+                      padding: '7px 8px',
                       borderRadius: '6px',
                       border: '1px solid #cbd5e1',
                       fontSize: '0.78rem',
@@ -848,33 +892,35 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
               className="card-grafico-container"
               style={{
                 background: '#ffffff',
-                padding: '16px',
+                padding: '14px 10px',
                 borderRadius: '12px',
                 border: '1px solid #e2e8f0',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                minHeight: '340px',
+                minHeight: '300px',
                 display: 'flex',
                 flexDirection: 'column',
+                boxSizing: 'border-box',
+                minWidth: 0,
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
                   Faturamento de Vendas — Vista por {periodoGrafico.toUpperCase()}
                 </h3>
-                <div style={{ fontSize: '0.9rem', color: '#16a34a', fontWeight: 700, background: '#f0fdf4', padding: '6px 12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: '0.88rem', color: '#16a34a', fontWeight: 700, background: '#f0fdf4', padding: '4px 10px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
                   Faturamento Total: R$ {faturamentoTotalGeral.toFixed(2).replace('.', ',')}
                 </div>
               </div>
 
-              <div style={{ width: '100%', height: 300, minHeight: 300 }}>
+              <div style={{ width: '100%', height: 260, minHeight: 260, minWidth: 0 }}>
                 {dadosGraficoFaturamento.length === 0 ? (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '0.85rem' }}>
                     Nenhum dado registrado para o período selecionado.
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={260}>
                     {tipoGrafico === 'area' ? (
-                      <AreaChart data={dadosGraficoFaturamento} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <AreaChart data={dadosGraficoFaturamento} margin={{ top: 10, right: 10, left: -10, bottom: 20 }}>
                         <defs>
                           <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#0284c7" stopOpacity={0.8} />
@@ -882,28 +928,38 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="label" stroke="#64748b" fontSize={11} tickLine={false} />
-                        <YAxis stroke="#64748b" fontSize={11} width={52} tickLine={false} tickFormatter={(v) => `R$${v}`} />
+                        <XAxis dataKey="label" stroke="#64748b" fontSize={10} tickLine={false} interval={0} tick={{ fontSize: 10, fill: '#64748b' }} dy={4} />
+                        <YAxis stroke="#64748b" fontSize={10} width={46} tickLine={false} tickFormatter={formatarValorYAxis} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <Tooltip
                           formatter={(val: any) => [`R$ ${Number(val).toFixed(2).replace('.', ',')}`, 'Faturamento']}
                           labelFormatter={(lbl) => `Período: ${lbl}`}
-                          contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                          contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8rem', padding: '6px 10px' }}
                           wrapperStyle={{ zIndex: 1000 }}
                         />
-                        <Area type="monotone" dataKey="faturamento" stroke="#0284c7" strokeWidth={3} fillOpacity={1} fill="url(#colorFaturamento)" name="Faturamento (R$)" />
+                        <Area
+                          type="monotone"
+                          dataKey="faturamento"
+                          stroke="#0284c7"
+                          strokeWidth={2.5}
+                          dot={{ r: 3, fill: '#0284c7', stroke: '#ffffff', strokeWidth: 1.5 }}
+                          activeDot={{ r: 5 }}
+                          fillOpacity={1}
+                          fill="url(#colorFaturamento)"
+                          name="Faturamento (R$)"
+                        />
                       </AreaChart>
                     ) : (
-                      <BarChart data={dadosGraficoFaturamento} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <BarChart data={dadosGraficoFaturamento} margin={{ top: 10, right: 10, left: -10, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="label" stroke="#64748b" fontSize={11} tickLine={false} />
-                        <YAxis stroke="#64748b" fontSize={11} width={52} tickLine={false} tickFormatter={(v) => `R$${v}`} />
+                        <XAxis dataKey="label" stroke="#64748b" fontSize={10} tickLine={false} interval={0} tick={{ fontSize: 10, fill: '#64748b' }} dy={4} />
+                        <YAxis stroke="#64748b" fontSize={10} width={46} tickLine={false} tickFormatter={formatarValorYAxis} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <Tooltip
                           formatter={(val: any) => [`R$ ${Number(val).toFixed(2).replace('.', ',')}`, 'Faturamento']}
                           labelFormatter={(lbl) => `Período: ${lbl}`}
-                          contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                          contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8rem', padding: '6px 10px' }}
                           wrapperStyle={{ zIndex: 1000 }}
                         />
-                        <Bar dataKey="faturamento" fill="#0284c7" radius={[6, 6, 0, 0]} name="Faturamento (R$)" />
+                        <Bar dataKey="faturamento" fill="#0284c7" radius={[4, 4, 0, 0]} name="Faturamento (R$)" />
                       </BarChart>
                     )}
                   </ResponsiveContainer>
@@ -915,76 +971,80 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
 
         {/* ABA 2: GRÁFICO DE DEVOLUÇÕES & ESTORNOS */}
         {abaAtiva === 'devolucoes' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ background: '#fef2f2', padding: '16px', borderRadius: '10px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div className="aba-conteudo-painel" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+            <div style={{ background: '#fef2f2', padding: '14px', borderRadius: '10px', border: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#991b1b', marginBottom: '4px' }}>
-                  🔄 Gráfico de Devoluções & Vendas Estornadas
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#991b1b', marginBottom: '2px', margin: 0 }}>
+                  🔄 Devoluções & Vendas Estornadas
                 </h3>
-                <p style={{ fontSize: '0.85rem', color: '#7f1d1d', margin: 0 }}>
-                  Acompanhe os valores devolvidos aos clientes e transações estornadas ao longo do tempo.
+                <p style={{ fontSize: '0.8rem', color: '#7f1d1d', margin: 0, marginTop: '2px' }}>
+                  Acompanhe os valores devolvidos aos clientes ao longo do tempo.
                 </p>
               </div>
-              <div style={{ background: '#ffffff', padding: '8px 14px', borderRadius: '8px', border: '1px solid #fca5a5', textAlign: 'right' }}>
-                <div style={{ fontSize: '0.75rem', color: '#991b1b', fontWeight: 600 }}>Total Devolvido/Estornado</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#dc2626' }}>
+              <div style={{ background: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: '1px solid #fca5a5', textAlign: 'right' }}>
+                <div style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 600 }}>Total Devolvido</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#dc2626' }}>
                   R$ {totalEstornosGeral.toFixed(2).replace('.', ',')}
                 </div>
               </div>
             </div>
 
             {/* SELEÇÃO DE PERÍODO PARA DEVOLUÇÕES */}
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Agrupar por:</span>
-              {(['dia', 'semana', 'mes', 'ano'] as const).map((p) => (
-                <button
-                  key={p}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    background: periodoGrafico === p ? '#dc2626' : '#ffffff',
-                    color: periodoGrafico === p ? '#ffffff' : '#334155',
-                  }}
-                  onClick={() => setPeriodoGrafico(p)}
-                >
-                  {p.toUpperCase()}
-                </button>
-              ))}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: '#ffffff', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Agrupar por:</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', flex: 1 }}>
+                {(['dia', 'semana', 'mes', 'ano'] as const).map((p) => (
+                  <button
+                    key={p}
+                    style={{
+                      padding: '5px 4px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
+                      background: periodoGrafico === p ? '#dc2626' : '#ffffff',
+                      color: periodoGrafico === p ? '#ffffff' : '#334155',
+                    }}
+                    onClick={() => setPeriodoGrafico(p)}
+                  >
+                    {p.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* GRÁFICO RECHARTS DE DEVOLUÇÕES */}
-            <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '320px' }}>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#991b1b', marginBottom: '14px' }}>
+            <div style={{ background: '#ffffff', padding: '14px 10px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '280px', minWidth: 0 }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#991b1b', marginBottom: '10px', margin: 0 }}>
                 Evolução do Valor Estornado (R$) — Por {periodoGrafico.toUpperCase()}
               </h4>
-              <div style={{ width: '100%', height: 280 }}>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={dadosGraficoDevolucoes} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+              <div style={{ width: '100%', height: 240, minHeight: 240, minWidth: 0 }}>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={dadosGraficoDevolucoes} margin={{ top: 10, right: 10, left: -10, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="label" stroke="#64748b" fontSize={12} tickLine={false} />
-                    <YAxis stroke="#64748b" fontSize={12} tickLine={false} tickFormatter={(v) => `R$${v}`} />
+                    <XAxis dataKey="label" stroke="#64748b" fontSize={10} tickLine={false} interval={0} tick={{ fontSize: 10, fill: '#64748b' }} dy={4} />
+                    <YAxis stroke="#64748b" fontSize={10} width={46} tickLine={false} tickFormatter={formatarValorYAxis} tick={{ fontSize: 10, fill: '#64748b' }} />
                     <Tooltip
                       formatter={(val: any) => [`R$ ${Number(val).toFixed(2).replace('.', ',')}`, 'Valor Estornado']}
                       labelFormatter={(lbl) => `Período: ${lbl}`}
-                      contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #fca5a5' }}
+                      contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #fca5a5', fontSize: '0.8rem', padding: '6px 10px' }}
                     />
-                    <Bar dataKey="estornado" fill="#ef4444" radius={[6, 6, 0, 0]} name="Valor Estornado (R$)" />
+                    <Bar dataKey="estornado" fill="#ef4444" radius={[4, 4, 0, 0]} name="Valor Estornado (R$)" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* LISTA DE DEVOLUÇÕES RECENTES */}
-            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#334155', marginBottom: '12px' }}>
+            <div style={{ background: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#334155', marginBottom: '10px', margin: 0 }}>
                 📋 Histórico de Transações Estornadas / Canceladas
               </h4>
               {vendasEstornadas.length === 0 ? (
-                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '16px', textAlign: 'center' }}>
+                <div style={{ color: '#64748b', fontSize: '0.82rem', padding: '14px', textAlign: 'center' }}>
                   Nenhum estorno ou devolução registrado até o momento.
                 </div>
               ) : (
@@ -993,30 +1053,30 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                     <div
                       key={v.id}
                       style={{
-                        padding: '10px 12px',
+                        padding: '8px 10px',
                         background: '#fef2f2',
                         borderRadius: '8px',
                         border: '1px solid #fecaca',
                         display: 'flex',
-                        justify: 'space-between',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
                         flexWrap: 'wrap',
-                        gap: '8px',
+                        gap: '6px',
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#991b1b' }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#991b1b' }}>
                           Venda #{v.id} — {v.data} {v.hora}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#475569' }}>
-                          Operador: <b>{v.operadorNome}</b> | Motivo Estorno: <i>{v.motivoEstorno || 'Não especificado'}</i>
+                        <div style={{ fontSize: '0.75rem', color: '#475569' }}>
+                          Operador: <b>{v.operadorNome}</b> | Motivo: <i>{v.motivoEstorno || 'Não especificado'}</i>
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '1rem', fontWeight: 800, color: '#dc2626' }}>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#dc2626' }}>
                           R$ {(v.valorTotal || 0).toFixed(2)}
                         </div>
-                        <small style={{ color: '#991b1b', fontWeight: 600 }}>STATUS: ESTORNADA</small>
+                        <small style={{ color: '#991b1b', fontWeight: 600, fontSize: '0.7rem' }}>ESTORNADA</small>
                       </div>
                     </div>
                   ))}
@@ -1028,67 +1088,67 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
 
         {/* ABA 3: GRÁFICO DE PERDAS & VENCIDOS */}
         {abaAtiva === 'perdas' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ background: '#fffbeb', padding: '16px', borderRadius: '10px', border: '1px solid #fde68a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div className="aba-conteudo-painel" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+            <div style={{ background: '#fffbeb', padding: '14px', borderRadius: '10px', border: '1px solid #fde68a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
-                  🛑 Gráfico de Perdas & Riscos por Validade do Estoque
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#92400e', marginBottom: '2px', margin: 0 }}>
+                  🛑 Perdas & Riscos por Validade do Estoque
                 </h3>
-                <p style={{ fontSize: '0.85rem', color: '#78350f', margin: 0 }}>
-                  Mapeia produtos com validade vencida ou prestes a vencer para evitar prejuízo financeiro.
+                <p style={{ fontSize: '0.8rem', color: '#78350f', margin: 0, marginTop: '2px' }}>
+                  Mapeia produtos com validade vencida ou prestes a vencer.
                 </p>
               </div>
-              <div style={{ background: '#ffffff', padding: '8px 14px', borderRadius: '8px', border: '1px solid #fcd34d', textAlign: 'right' }}>
-                <div style={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600 }}>Total de Perda em Vencidos</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#b45309' }}>
+              <div style={{ background: '#ffffff', padding: '6px 12px', borderRadius: '8px', border: '1px solid #fcd34d', textAlign: 'right' }}>
+                <div style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: 600 }}>Perda em Vencidos</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#b45309' }}>
                   R$ {dadosPerdas.totalVencidosValor.toFixed(2).replace('.', ',')}
                 </div>
               </div>
             </div>
 
             {/* RESUMO CARD DE PERDAS */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#991b1b', fontWeight: 700 }}>❌ Já Vencidos (Perda Real)</span>
-                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#dc2626', marginTop: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 700 }}>❌ Já Vencidos</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
                   R$ {dadosPerdas.totalVencidosValor.toFixed(2)}
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#7f1d1d' }}>{dadosPerdas.totalVencidosQtd} unidade(s)</div>
+                <div style={{ fontSize: '0.72rem', color: '#7f1d1d' }}>{dadosPerdas.totalVencidosQtd} un</div>
               </div>
 
-              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#92400e', fontWeight: 700 }}>⚠️ Vence em até 7 dias (Urgente)</span>
-                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '10px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#92400e', fontWeight: 700 }}>⚠️ Até 7 dias</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#d97706', marginTop: '2px' }}>
                   R$ {dadosPerdas.totalAVencer7DiasValor.toFixed(2)}
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#78350f' }}>{dadosPerdas.totalAVencer7DiasQtd} unidade(s)</div>
+                <div style={{ fontSize: '0.72rem', color: '#78350f' }}>{dadosPerdas.totalAVencer7DiasQtd} un</div>
               </div>
 
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#1e40af', fontWeight: 700 }}>📅 Vence em até 30 dias (Atenção)</span>
-                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#2563eb', marginTop: '4px' }}>
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#1e40af', fontWeight: 700 }}>📅 Até 30 dias</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#2563eb', marginTop: '2px' }}>
                   R$ {dadosPerdas.totalAVencer30DiasValor.toFixed(2)}
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#1e3a8a' }}>{dadosPerdas.totalAVencer30DiasQtd} unidade(s)</div>
+                <div style={{ fontSize: '0.72rem', color: '#1e3a8a' }}>{dadosPerdas.totalAVencer30DiasQtd} un</div>
               </div>
             </div>
 
             {/* GRÁFICO RECHARTS DE RISCO DE PERDA */}
-            <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '300px' }}>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#334155', marginBottom: '14px' }}>
+            <div style={{ background: '#ffffff', padding: '14px 10px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '260px', minWidth: 0 }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#334155', marginBottom: '10px', margin: 0 }}>
                 Distribuição Financeira de Perdas e Vencimentos (R$)
               </h4>
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={dadosPerdas.graficoRisco} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+              <div style={{ width: '100%', height: 240, minHeight: 240, minWidth: 0 }}>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={dadosPerdas.graficoRisco} margin={{ top: 10, right: 10, left: -10, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="label" stroke="#64748b" fontSize={12} tickLine={false} />
-                    <YAxis stroke="#64748b" fontSize={12} tickLine={false} tickFormatter={(v) => `R$${v}`} />
+                    <XAxis dataKey="label" stroke="#64748b" fontSize={10} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} dy={4} />
+                    <YAxis stroke="#64748b" fontSize={10} width={46} tickLine={false} tickFormatter={formatarValorYAxis} tick={{ fontSize: 10, fill: '#64748b' }} />
                     <Tooltip
                       formatter={(val: any) => [`R$ ${Number(val).toFixed(2).replace('.', ',')}`, 'Valor em Risco']}
-                      contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                      contentStyle={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8rem', padding: '6px 10px' }}
                     />
-                    <Bar dataKey="valorR$" radius={[6, 6, 0, 0]} name="Valor em R$ (Perda / Risco)">
+                    <Bar dataKey="valorR$" radius={[4, 4, 0, 0]} name="Valor em R$ (Perda / Risco)">
                       {dadosPerdas.graficoRisco.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}
@@ -1099,37 +1159,37 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
             </div>
 
             {/* TABELA DE PRODUTOS CRÍTICOS / PERDAS */}
-            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#334155', marginBottom: '12px' }}>
+            <div style={{ background: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#334155', marginBottom: '10px', margin: 0 }}>
                 🚨 Produtos Críticos Vencidos ou a Vencer
               </h4>
               {dadosPerdas.listaVencidos.length === 0 ? (
-                <div style={{ color: '#16a34a', fontSize: '0.85rem', padding: '16px', textAlign: 'center', background: '#f0fdf4', borderRadius: '8px' }}>
+                <div style={{ color: '#16a34a', fontSize: '0.82rem', padding: '14px', textAlign: 'center', background: '#f0fdf4', borderRadius: '8px' }}>
                   🎉 Excelente! Nenhum produto vencido ou com validade próxima no estoque.
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', minWidth: '400px' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
-                        <th style={{ padding: '8px' }}>Status</th>
-                        <th style={{ padding: '8px' }}>Produto</th>
-                        <th style={{ padding: '8px' }}>Lote</th>
-                        <th style={{ padding: '8px' }}>Validade</th>
-                        <th style={{ padding: '8px' }}>Qtd</th>
-                        <th style={{ padding: '8px', textAlign: 'right' }}>Perda Total (R$)</th>
+                        <th style={{ padding: '6px 8px' }}>Status</th>
+                        <th style={{ padding: '6px 8px' }}>Produto</th>
+                        <th style={{ padding: '6px 8px' }}>Lote</th>
+                        <th style={{ padding: '6px 8px' }}>Validade</th>
+                        <th style={{ padding: '6px 8px' }}>Qtd</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Perda (R$)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {dadosPerdas.listaVencidos.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px' }}>
+                          <td style={{ padding: '6px 8px' }}>
                             <span
                               style={{
-                                padding: '2px 8px',
+                                padding: '2px 6px',
                                 borderRadius: '4px',
                                 fontWeight: 700,
-                                fontSize: '0.75rem',
+                                fontSize: '0.7rem',
                                 background:
                                   item.status === 'Vencido'
                                     ? '#fef2f2'
@@ -1147,11 +1207,11 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                               {item.status}
                             </span>
                           </td>
-                          <td style={{ padding: '8px', fontWeight: 600 }}>{item.nome}</td>
-                          <td style={{ padding: '8px', color: '#64748b' }}>{item.lote || '-'}</td>
-                          <td style={{ padding: '8px', fontWeight: 600 }}>{item.validade}</td>
-                          <td style={{ padding: '8px' }}>{item.qtd} un</td>
-                          <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, color: item.status === 'Vencido' ? '#dc2626' : '#d97706' }}>
+                          <td style={{ padding: '6px 8px', fontWeight: 600 }}>{item.nome}</td>
+                          <td style={{ padding: '6px 8px', color: '#64748b' }}>{item.lote || '-'}</td>
+                          <td style={{ padding: '6px 8px', fontWeight: 600 }}>{item.validade}</td>
+                          <td style={{ padding: '6px 8px' }}>{item.qtd} un</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: item.status === 'Vencido' ? '#dc2626' : '#d97706' }}>
                             R$ {item.perdaTotalR$.toFixed(2)}
                           </td>
                         </tr>
@@ -1166,71 +1226,71 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
 
         {/* ABA 4: VISÃO GERAL DO ESTOQUE */}
         {abaAtiva === 'estoque_chart' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="aba-conteudo-painel" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             {/* CARDS RESUMO DO ESTOQUE */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>📦 Total de Peças em Loja</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6', marginTop: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '10px 12px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>📦 Total de Peças</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#3b82f6', marginTop: '2px' }}>
                   {dadosEstoqueGrafico.totalPecasEstoque} un
                 </div>
               </div>
 
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>💵 Valor Total em Venda (R$)</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#16a34a', marginTop: '4px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '10px 12px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>💵 Total em Venda</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#16a34a', marginTop: '2px' }}>
                   R$ {dadosEstoqueGrafico.totalValorVendaEstoque.toFixed(2).replace('.', ',')}
                 </div>
               </div>
 
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>🏷️ Custo Total do Estoque (R$)</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#6366f1', marginTop: '4px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '10px 12px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>🏷️ Custo Total</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#6366f1', marginTop: '2px' }}>
                   R$ {dadosEstoqueGrafico.totalValorCustoEstoque.toFixed(2).replace('.', ',')}
                 </div>
               </div>
 
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px', borderRadius: '10px' }}>
-                <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>✨ Margem Bruta Projetada</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0d9488', marginTop: '4px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '10px 12px', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>✨ Margem Bruta</span>
+                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0d9488', marginTop: '2px' }}>
                   R$ {dadosEstoqueGrafico.lucroBrutoProjetado.toFixed(2).replace('.', ',')}
                 </div>
               </div>
             </div>
 
             {/* GRÁFICOS DE ESTOQUE */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
               {/* TOP 10 MAIOR VALOR FINANCEIRO EM ESTOQUE */}
-              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', marginBottom: '12px' }}>
-                  💰 Top 10 Produtos por Maior Valor em Dinheiro (R$)
+              <div style={{ background: '#ffffff', padding: '14px 10px', borderRadius: '12px', border: '1px solid #e2e8f0', minWidth: 0 }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '10px', margin: 0 }}>
+                  💰 Top 10 Produtos por Valor Total (R$)
                 </h4>
-                <div style={{ width: '100%', height: 280 }}>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart layout="vertical" data={dadosEstoqueGrafico.topMaiorValor} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                <div style={{ width: '100%', height: 260, minHeight: 260, minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart layout="vertical" data={dadosEstoqueGrafico.topMaiorValor} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                      <XAxis type="number" stroke="#64748b" fontSize={11} tickFormatter={(v) => `R$${v}`} />
-                      <YAxis dataKey="nome" type="category" width={110} stroke="#64748b" fontSize={11} />
-                      <Tooltip formatter={(val: any) => [`R$ ${Number(val).toFixed(2)}`, 'Valor Total em Loja']} />
-                      <Bar dataKey="valorVendaTotal" fill="#10b981" radius={[0, 6, 6, 0]} name="Valor Venda (R$)" />
+                      <XAxis type="number" stroke="#64748b" fontSize={10} tickFormatter={formatarValorYAxis} tick={{ fontSize: 10, fill: '#64748b' }} />
+                      <YAxis dataKey="nome" type="category" width={85} stroke="#64748b" fontSize={10} tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(n) => truncarTexto(n, 12)} />
+                      <Tooltip formatter={(val: any) => [`R$ ${Number(val).toFixed(2)}`, 'Valor em Loja']} />
+                      <Bar dataKey="valorVendaTotal" fill="#10b981" radius={[0, 4, 4, 0]} name="Valor Venda (R$)" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               {/* TOP 10 MAIOR QUANTIDADE DE UNIDADES */}
-              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', marginBottom: '12px' }}>
-                  📦 Top 10 Produtos por Maior Quantidade (Unidades)
+              <div style={{ background: '#ffffff', padding: '14px 10px', borderRadius: '12px', border: '1px solid #e2e8f0', minWidth: 0 }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '10px', margin: 0 }}>
+                  📦 Top 10 Produtos por Quantidade
                 </h4>
-                <div style={{ width: '100%', height: 280 }}>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart layout="vertical" data={dadosEstoqueGrafico.topMaiorQtd} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                <div style={{ width: '100%', height: 260, minHeight: 260, minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart layout="vertical" data={dadosEstoqueGrafico.topMaiorQtd} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                      <XAxis type="number" stroke="#64748b" fontSize={11} />
-                      <YAxis dataKey="nome" type="category" width={110} stroke="#64748b" fontSize={11} />
+                      <XAxis type="number" stroke="#64748b" fontSize={10} tick={{ fontSize: 10, fill: '#64748b' }} />
+                      <YAxis dataKey="nome" type="category" width={85} stroke="#64748b" fontSize={10} tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(n) => truncarTexto(n, 12)} />
                       <Tooltip formatter={(val: any) => [`${val} un`, 'Quantidade']} />
-                      <Bar dataKey="quantidade" fill="#6366f1" radius={[0, 6, 6, 0]} name="Unidades" />
+                      <Bar dataKey="quantidade" fill="#6366f1" radius={[0, 4, 4, 0]} name="Unidades" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1241,18 +1301,18 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
 
         {/* ABA 5: MAIS E MENOS VENDIDOS */}
         {abaAtiva === 'ranking' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+          <div className="aba-conteudo-painel" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             {/* MAIS VENDIDOS */}
-            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#16a34a', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                🔥 Produtos Mais Vendidos (Maior Saída)
+            <div style={{ background: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#16a34a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                🔥 Produtos Mais Vendidos
               </h3>
               {maisVendidos.length === 0 ? (
-                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '20px', textAlign: 'center' }}>
+                <div style={{ color: '#64748b', fontSize: '0.82rem', padding: '16px', textAlign: 'center' }}>
                   Nenhum registro de vendas no período.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
                   {maisVendidos.map((prod, index) => (
                     <div
                       key={prod.codigo || index}
@@ -1260,22 +1320,23 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '10px 12px',
+                        padding: '8px 10px',
                         background: '#f0fdf4',
                         borderRadius: '8px',
                         border: '1px solid #bbf7d0',
+                        gap: '8px',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '1rem', width: '24px' }}>#{index + 1}</span>
-                        <div>
-                          <b style={{ fontSize: '0.88rem', color: '#0f172a', display: 'block' }}>{prod.nome}</b>
-                          <small style={{ color: '#475569' }}>Cód: {prod.codigo}</small>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                        <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '0.9rem', width: '22px', flexShrink: 0 }}>#{index + 1}</span>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <b style={{ fontSize: '0.82rem', color: '#0f172a', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prod.nome}</b>
+                          <small style={{ color: '#475569', fontSize: '0.72rem' }}>Cód: {prod.codigo}</small>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '0.95rem' }}>{prod.qtdVendida} un vendidas</div>
-                        <small style={{ color: '#64748b' }}>Faturado: R$ {prod.totalFaturado.toFixed(2)}</small>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '0.85rem' }}>{prod.qtdVendida} un</div>
+                        <small style={{ color: '#64748b', fontSize: '0.72rem' }}>R$ {prod.totalFaturado.toFixed(2)}</small>
                       </div>
                     </div>
                   ))}
@@ -1284,16 +1345,16 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
             </div>
 
             {/* MENOS VENDIDOS */}
-            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#dc2626', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                🧊 Produtos Menos Vendidos (Baixa Saída)
+            <div style={{ background: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#dc2626', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                🧊 Produtos Menos Vendidos
               </h3>
               {menosVendidos.length === 0 ? (
-                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '20px', textAlign: 'center' }}>
+                <div style={{ color: '#64748b', fontSize: '0.82rem', padding: '16px', textAlign: 'center' }}>
                   Nenhum registro de vendas no período.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
                   {menosVendidos.map((prod, index) => (
                     <div
                       key={prod.codigo || index}
@@ -1301,22 +1362,23 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '10px 12px',
+                        padding: '8px 10px',
                         background: '#fef2f2',
                         borderRadius: '8px',
                         border: '1px solid #fecaca',
+                        gap: '8px',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontWeight: 800, color: '#dc2626', fontSize: '1rem', width: '24px' }}>#{index + 1}</span>
-                        <div>
-                          <b style={{ fontSize: '0.88rem', color: '#0f172a', display: 'block' }}>{prod.nome}</b>
-                          <small style={{ color: '#475569' }}>Cód: {prod.codigo}</small>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                        <span style={{ fontWeight: 800, color: '#dc2626', fontSize: '0.9rem', width: '22px', flexShrink: 0 }}>#{index + 1}</span>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <b style={{ fontSize: '0.82rem', color: '#0f172a', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prod.nome}</b>
+                          <small style={{ color: '#475569', fontSize: '0.72rem' }}>Cód: {prod.codigo}</small>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 700, color: '#dc2626', fontSize: '0.95rem' }}>{prod.qtdVendida} un vendidas</div>
-                        <small style={{ color: '#64748b' }}>Faturado: R$ {prod.totalFaturado.toFixed(2)}</small>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontWeight: 700, color: '#dc2626', fontSize: '0.85rem' }}>{prod.qtdVendida} un</div>
+                        <small style={{ color: '#64748b', fontSize: '0.72rem' }}>R$ {prod.totalFaturado.toFixed(2)}</small>
                       </div>
                     </div>
                   ))}
@@ -1328,22 +1390,22 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
 
         {/* ABA 6: INTELIGÊNCIA DE ESTOQUE E CONSELHOS AO DONO */}
         {abaAtiva === 'inteligencia' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="aba-conteudo-painel" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             {/* PAINEL INFORMATIVO */}
-            <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '10px', border: '1px solid #bae6fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ background: '#f0f9ff', padding: '14px', borderRadius: '10px', border: '1px solid #bae6fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0369a1', marginBottom: '4px' }}>
-                  🧠 Painel de Inteligência de Estoque (Para o Dono do Supermercado)
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0369a1', marginBottom: '2px', margin: 0 }}>
+                  🧠 Inteligência de Estoque (Para o Dono)
                 </h3>
-                <p style={{ fontSize: '0.85rem', color: '#0c4a6e', margin: 0 }}>
-                  Cruza a quantidade vendida com o estoque atual para mostrar onde investir dinheiro e onde parar compras.
+                <p style={{ fontSize: '0.8rem', color: '#0c4a6e', margin: 0, marginTop: '2px' }}>
+                  Identifica onde investir mais e onde pausar compras.
                 </p>
               </div>
 
               {insightsEstoque.totalCapitalParado > 0 && (
-                <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #7dd3fc', textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#0369a1', fontWeight: 600 }}>Capital Preso em Estoque Parado</div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#b45309' }}>
+                <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '8px', border: '1px solid #7dd3fc', textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: 600 }}>Capital em Estoque Parado</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#b45309' }}>
                     R$ {insightsEstoque.totalCapitalParado.toFixed(2).replace('.', ',')}
                   </div>
                 </div>
@@ -1351,54 +1413,54 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
             </div>
 
             {/* SEÇÃO 1: EVITAR COMPRAR MAIS (ESTOQUE PARADO) */}
-            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#b45309', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                🛑 Estoque Parado / Evitar Investir Mais (Pouca Saída)
+            <div style={{ background: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#b45309', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                🛑 Estoque Parado / Pausar Compras
               </h3>
               {insightsEstoque.naoInvestir.length === 0 ? (
-                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '14px', background: '#f8fafc', borderRadius: '8px' }}>
+                <div style={{ color: '#64748b', fontSize: '0.82rem', padding: '12px', background: '#f8fafc', borderRadius: '8px', marginTop: '8px' }}>
                   🎉 Excelente! Nenhum produto detectado com excesso de estoque parado sem vendas.
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', marginTop: '10px' }}>
                   {insightsEstoque.naoInvestir.map((item) => (
                     <div
                       key={item.codigo}
                       style={{
                         background: '#fffbeb',
                         border: '1px solid #fde68a',
-                        borderRadius: '10px',
-                        padding: '12px',
+                        borderRadius: '8px',
+                        padding: '10px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                       }}
                     >
                       <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <b style={{ fontSize: '0.92rem', color: '#78350f' }}>{item.nome}</b>
-                          <span style={{ fontSize: '0.75rem', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px', gap: '6px' }}>
+                          <b style={{ fontSize: '0.85rem', color: '#78350f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nome}</b>
+                          <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, flexShrink: 0 }}>
                             Cód: {item.codigo}
                           </span>
                         </div>
-                        <p style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.4, margin: '6px 0' }}>
+                        <p style={{ fontSize: '0.78rem', color: '#92400e', lineHeight: 1.35, margin: '4px 0' }}>
                           {item.motivo}
                         </p>
                       </div>
 
                       <div
                         style={{
-                          marginTop: '8px',
+                          marginTop: '6px',
                           display: 'flex',
-                          justify: 'space-between',
-                          fontSize: '0.78rem',
+                          justifyContent: 'space-between',
+                          fontSize: '0.75rem',
                           fontWeight: 700,
                           color: '#b45309',
                           borderTop: '1px dashed #fcd34d',
-                          paddingTop: '6px',
+                          paddingTop: '4px',
                         }}
                       >
-                        <span>📦 Em Estoque: {item.qtdEstoque} un</span>
+                        <span>📦 Estoque: {item.qtdEstoque} un</span>
                         <span>🛒 Vendas: {item.qtdVendida} un</span>
                       </div>
                     </div>
@@ -1408,54 +1470,54 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
             </div>
 
             {/* SEÇÃO 2: PRODUTOS PARA INVESTIR MAIS */}
-            <div style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#15803d', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                🚀 Produtos para Investir Mais (Alta Giro / Reposição Recomendada)
+            <div style={{ background: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#15803d', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                🚀 Produtos para Reposição Urgente (Alto Giro)
               </h3>
               {insightsEstoque.investirMais.length === 0 ? (
-                <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '14px', background: '#f8fafc', borderRadius: '8px' }}>
+                <div style={{ color: '#64748b', fontSize: '0.82rem', padding: '12px', background: '#f8fafc', borderRadius: '8px', marginTop: '8px' }}>
                   Nenhum alerta de reposição urgente no momento.
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', marginTop: '10px' }}>
                   {insightsEstoque.investirMais.map((item) => (
                     <div
                       key={item.codigo}
                       style={{
                         background: '#f0fdf4',
                         border: '1px solid #86efac',
-                        borderRadius: '10px',
-                        padding: '12px',
+                        borderRadius: '8px',
+                        padding: '10px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                       }}
                     >
                       <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <b style={{ fontSize: '0.92rem', color: '#14532d' }}>{item.nome}</b>
-                          <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px', gap: '6px' }}>
+                          <b style={{ fontSize: '0.85rem', color: '#14532d', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nome}</b>
+                          <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '1px 5px', borderRadius: '4px', fontWeight: 600, flexShrink: 0 }}>
                             Cód: {item.codigo}
                           </span>
                         </div>
-                        <p style={{ fontSize: '0.8rem', color: '#166534', lineHeight: 1.4, margin: '6px 0' }}>
+                        <p style={{ fontSize: '0.78rem', color: '#166534', lineHeight: 1.35, margin: '4px 0' }}>
                           {item.motivo}
                         </p>
                       </div>
 
                       <div
                         style={{
-                          marginTop: '8px',
+                          marginTop: '6px',
                           display: 'flex',
-                          justify: 'space-between',
-                          fontSize: '0.78rem',
+                          justifyContent: 'space-between',
+                          fontSize: '0.75rem',
                           fontWeight: 700,
                           color: '#15803d',
                           borderTop: '1px dashed #bbf7d0',
-                          paddingTop: '6px',
+                          paddingTop: '4px',
                         }}
                       >
-                        <span>📦 Em Estoque: {item.qtdEstoque} un</span>
+                        <span>📦 Estoque: {item.qtdEstoque} un</span>
                         <span>🛒 Vendas: {item.qtdVendida} un</span>
                       </div>
                     </div>

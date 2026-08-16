@@ -37,6 +37,17 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
   const [pinSenhaCaixa, setPinSenhaCaixa] = useState('');
   const [erroCaixa, setErroCaixa] = useState('');
 
+  React.useEffect(() => {
+    if (listaSupermercados.length > 0) {
+      if (!lojaSelecionadaId || !listaSupermercados.some((l) => l.id === lojaSelecionadaId)) {
+        setLojaSelecionadaId(listaSupermercados[0].id);
+      }
+      if (!lojaCaixaId || !listaSupermercados.some((l) => l.id === lojaCaixaId)) {
+        setLojaCaixaId(listaSupermercados[0].id);
+      }
+    }
+  }, [listaSupermercados, lojaSelecionadaId, lojaCaixaId]);
+
   if (!visivel) return null;
 
   const handleLoginDono = (e: React.FormEvent) => {

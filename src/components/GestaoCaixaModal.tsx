@@ -50,6 +50,13 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
   const [senhaFechar, setSenhaFechar] = useState<string>('');
   const [msgErroFechamento, setMsgErroFechamento] = useState<string>('');
 
+  React.useEffect(() => {
+    if (operadorAtivo?.cpfOuUsuario) {
+      setLoginAbrir(operadorAtivo.cpfOuUsuario);
+      setLoginFechar(operadorAtivo.cpfOuUsuario);
+    }
+  }, [operadorAtivo]);
+
   if (!visivel) return null;
 
   // Totais Esperados do Caixa Ativo

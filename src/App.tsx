@@ -906,6 +906,7 @@ export default function App() {
       relatorios: status,
       estorno: status,
       graficos: status,
+      devedores: status,
       inteligencia_estoque: status,
       ocr_ia: status,
       etiquetas: status,
@@ -1043,14 +1044,14 @@ export default function App() {
 
   const prepararEdicaoLoja = (loja: Supermercado) => {
     setLojaEditandoId(loja.id);
-    setRegLojaNome(loja.nome);
-    setRegLojaCnpj(loja.cnpj);
+    setRegLojaNome(loja.nome || '');
+    setRegLojaCnpj(loja.cnpj || '');
     setRegLojaSenha(loja.senha || '');
-    setRegLojaLimiteCaixas(loja.limiteCaixas !== undefined ? loja.limiteCaixas : 5);
-    setRegLojaLimiteSupervisores(loja.limiteSupervisores !== undefined ? loja.limiteSupervisores : 2);
+    setRegLojaLimiteCaixas(loja.limiteCaixas !== undefined && loja.limiteCaixas !== null ? loja.limiteCaixas : 5);
+    setRegLojaLimiteSupervisores(loja.limiteSupervisores !== undefined && loja.limiteSupervisores !== null ? loja.limiteSupervisores : 2);
     setRegLojaPermissoes(loja.permissoesLoja || PERMISSOES_LOJA_PADRAO);
     setSenhaVisivel(true);
-    setMsgRegLoja(<span style={{ color: 'var(--primario)' }}>Editando: {loja.nome}</span>);
+    setMsgRegLoja(<span style={{ color: 'var(--primario)' }}>Editando: {loja.nome || ''}</span>);
   };
 
   const excluirSupermercado = (idLoja: string) => {
@@ -1126,6 +1127,98 @@ export default function App() {
       ...prev,
       [chave]: !prev[chave],
     }));
+  };
+
+  const marcarTodasPermissoesOperador = (status: boolean) => {
+    setRegOpPermissoes({
+      vender: status,
+      gestao_caixa: status,
+      dar_desconto: status,
+      alterar_preco: status,
+      estornar_venda: status,
+      cadastrar_produtos: status,
+      excluir_produtos: status,
+      baixa_estoque: status,
+      gerenciar_devedores: status,
+      ver_relatorios: status,
+      ver_graficos: status,
+      inteligencia_estoque: status,
+      gerenciar_equipe: status,
+      imprimir_etiquetas: status,
+      alertas_whatsapp: status,
+      usar_ocr_ia: status,
+      exportar_relatorios: status,
+    });
+  };
+
+  const aplicarPresetPermissoes = (preset: 'caixa' | 'repositor' | 'supervisor' | 'admin') => {
+    if (preset === 'caixa') {
+      setRegOpCargo('Operador de Caixa');
+      setRegOpPermissoes({
+        vender: true,
+        gestao_caixa: true,
+        dar_desconto: false,
+        alterar_preco: false,
+        estornar_venda: false,
+        cadastrar_produtos: false,
+        excluir_produtos: false,
+        baixa_estoque: false,
+        gerenciar_devedores: true,
+        ver_relatorios: false,
+        ver_graficos: false,
+        inteligencia_estoque: false,
+        gerenciar_equipe: false,
+        imprimir_etiquetas: true,
+        alertas_whatsapp: false,
+        usar_ocr_ia: true,
+        exportar_relatorios: false,
+      });
+    } else if (preset === 'repositor') {
+      setRegOpCargo('Operador de Caixa');
+      setRegOpPermissoes({
+        vender: false,
+        gestao_caixa: false,
+        dar_desconto: false,
+        alterar_preco: false,
+        estornar_venda: false,
+        cadastrar_produtos: true,
+        excluir_produtos: false,
+        baixa_estoque: true,
+        gerenciar_devedores: false,
+        ver_relatorios: true,
+        ver_graficos: false,
+        inteligencia_estoque: true,
+        gerenciar_equipe: false,
+        imprimir_etiquetas: true,
+        alertas_whatsapp: true,
+        usar_ocr_ia: true,
+        exportar_relatorios: false,
+      });
+    } else if (preset === 'supervisor') {
+      setRegOpCargo('Supervisor');
+      setRegOpPermissoes({
+        vender: true,
+        gestao_caixa: true,
+        dar_desconto: true,
+        alterar_preco: true,
+        estornar_venda: true,
+        cadastrar_produtos: true,
+        excluir_produtos: true,
+        baixa_estoque: true,
+        gerenciar_devedores: true,
+        ver_relatorios: true,
+        ver_graficos: true,
+        inteligencia_estoque: true,
+        gerenciar_equipe: false,
+        imprimir_etiquetas: true,
+        alertas_whatsapp: true,
+        usar_ocr_ia: true,
+        exportar_relatorios: true,
+      });
+    } else {
+      setRegOpCargo('Administrador');
+      setRegOpPermissoes(PERMISSOES_ADMIN_PADRAO);
+    }
   };
 
   const aplicarPermissoesPorCargo = (cargo: 'Operador de Caixa' | 'Supervisor' | 'Administrador') => {
@@ -1213,12 +1306,12 @@ export default function App() {
 
   const prepararEdicaoOperador = (op: OperadorCaixa) => {
     setOpEditandoId(op.id);
-    setRegOpNome(op.nome);
-    setRegOpCpf(op.cpfOuUsuario);
-    setRegOpSenha(op.pinSenha);
-    setRegOpCargo(op.cargo);
+    setRegOpNome(op.nome || '');
+    setRegOpCpf(op.cpfOuUsuario || '');
+    setRegOpSenha(op.pinSenha || '');
+    setRegOpCargo(op.cargo || 'Operador de Caixa');
     setRegOpPermissoes(op.permissoes || PERMISSOES_CAIXA_PADRAO);
-    setMsgRegOp(<span style={{ color: 'var(--primario)' }}>Editando: {op.nome}</span>);
+    setMsgRegOp(<span style={{ color: 'var(--primario)' }}>Editando: {op.nome || ''}</span>);
   };
 
   const alternarStatusOperador = (idOp: string) => {
@@ -1291,7 +1384,7 @@ export default function App() {
     if (perfilAtivo === 'dona_app') return true;
     if (!lojaAtualObj || lojaAtualObj.status === 'bloqueado') return false;
     const perms = lojaAtualObj.permissoesLoja || PERMISSOES_LOJA_PADRAO;
-    return !!perms[modulo];
+    return perms[modulo] !== false;
   };
 
   // Helper 2: Condição booleana rigorosa para renderizar botões e áreas na tela
@@ -1308,7 +1401,7 @@ export default function App() {
     // Se a Dona do App desabilitou este módulo para o supermercado, não aparece para ninguém na loja
     if (moduloLoja) {
       const permsLoja = lojaAtualObj.permissoesLoja || PERMISSOES_LOJA_PADRAO;
-      if (!permsLoja[moduloLoja]) return false;
+      if (permsLoja[moduloLoja] === false) return false;
     }
 
     // Administrador do supermercado tem acesso a todos os módulos autorizados para a loja
@@ -1317,9 +1410,22 @@ export default function App() {
     // Funcionário / Caixa: checa se está cadastrado, ativo e se a permissão individual foi concedida
     if (perfilAtivo === 'caixa') {
       const op = listaOperadores.find((o) => o.id === operadorAtivoId);
-      if (!op || op.ativo === false) return false;
+      if (!op) {
+        return !!PERMISSOES_CAIXA_PADRAO[acao];
+      }
+      if (op.ativo === false) return false;
+
+      // Se for Supervisor ou Administrador de equipe, tem as permissões administrativas
+      if (op.cargo === 'Supervisor' || op.cargo === 'Administrador') {
+        const permsOp = op.permissoes || PERMISSOES_ADMIN_PADRAO;
+        return permsOp[acao] !== false;
+      }
+
       const permsOp = op.permissoes || PERMISSOES_CAIXA_PADRAO;
-      return !!permsOp[acao];
+      if (permsOp[acao] !== undefined) {
+        return !!permsOp[acao];
+      }
+      return !!PERMISSOES_CAIXA_PADRAO[acao];
     }
 
     return false;
@@ -1360,7 +1466,7 @@ export default function App() {
     // 3. Check Store Permissions (configured by Dona do App)
     const permLoja = lojaAtualObj?.permissoesLoja || PERMISSOES_LOJA_PADRAO;
 
-    if (!permLoja[tipoModuloLoja]) {
+    if (permLoja[tipoModuloLoja] === false) {
       setAvisoRestrito(
         `🔒 Acesso Bloqueado pela Dona do Aplicativo: O módulo "${nomeAcaoFormatado || tipoModuloLoja}" está desabilitado para o supermercado "${nomeSupermercadoAtivo}".`
       );
@@ -1373,14 +1479,25 @@ export default function App() {
     // 5. Cashier / Staff Operator permissions check (configured by Store Owner)
     if (perfilAtivo === 'caixa' && acaoOperador) {
       const opAtual = listaOperadores.find((o) => o.id === operadorAtivoId);
-      if (!opAtual || opAtual.ativo === false) {
+      if (opAtual && opAtual.ativo === false) {
         setAvisoRestrito('🔒 Operador inativo ou bloqueado. Peça autorização ao Administrador do Supermercado.');
         return false;
       }
-      const permOp = opAtual.permissoes || PERMISSOES_CAIXA_PADRAO;
-      if (!permOp[acaoOperador]) {
+      if (opAtual && (opAtual.cargo === 'Supervisor' || opAtual.cargo === 'Administrador')) {
+        const permOp = opAtual.permissoes || PERMISSOES_ADMIN_PADRAO;
+        if (permOp[acaoOperador] === false) {
+          setAvisoRestrito(
+            `🔒 Acesso Restrito: A função "${nomeAcaoFormatado || acaoOperador}" foi desmarcada para este usuário.`
+          );
+          return false;
+        }
+        return true;
+      }
+      const permOp = opAtual?.permissoes || PERMISSOES_CAIXA_PADRAO;
+      const tem = permOp[acaoOperador] !== undefined ? permOp[acaoOperador] : PERMISSOES_CAIXA_PADRAO[acaoOperador];
+      if (!tem) {
         setAvisoRestrito(
-          `🔒 Acesso Restrito: O funcionário "${opAtual.nome}" (${opAtual.cargo}) não tem permissão para "${nomeAcaoFormatado || acaoOperador}".`
+          `🔒 Acesso Restrito: O funcionário "${opAtual?.nome || 'Operador'}" (${opAtual?.cargo || 'Caixa'}) não tem permissão para "${nomeAcaoFormatado || acaoOperador}". Solicite a liberação no cadastro de funcionários.`
         );
         return false;
       }
@@ -1935,8 +2052,8 @@ export default function App() {
       if (cat) {
         setModoCadastroItem(perfilAtivo === 'dona_app' ? 'master' : 'estoque');
         setCodigoEditando({ codigo: cod, validade: '', lote: '' });
-        setCadCod(cat.codigo);
-        setCadNome(cat.nome);
+        setCadCod(cat.codigo || '');
+        setCadNome(cat.nome || '');
         setCadMarca(cat.marca || '');
         setCadCategoria(cat.categoria || '');
         setFotoTemp(cat.imagem || '');
@@ -1953,16 +2070,16 @@ export default function App() {
 
     setModoCadastroItem('estoque');
     setCodigoEditando({ codigo: cod, validade: val, lote });
-    setCadCod(p.codigo);
-    setCadNome(p.nome);
+    setCadCod(p.codigo || '');
+    setCadNome(p.nome || '');
     const catRel = catalogoGlobal.find((c) => c.codigo === cod);
     setCadMarca(catRel?.marca || '');
     setCadCategoria(catRel?.categoria || '');
-    setCadQtd(String(p.quantidade));
+    setCadQtd(String(p.quantidade ?? 1));
     setCadLote(p.lote || '');
-    setCadVal(p.validade);
-    setCadCusto(p.preco_custo !== undefined ? String(p.preco_custo) : '');
-    setCadPreco(String(p.preco_venda));
+    setCadVal(p.validade || '');
+    setCadCusto(p.preco_custo !== undefined && p.preco_custo !== null ? String(p.preco_custo) : '');
+    setCadPreco(p.preco_venda !== undefined && p.preco_venda !== null ? String(p.preco_venda) : '');
     setFotoTemp(p.foto || '');
     setMsgCad('');
     setModalCadastroVisivel(true);
@@ -3625,7 +3742,7 @@ export default function App() {
                     min="0"
                     className="input-modal"
                     placeholder="Ex: 5"
-                    value={regLojaLimiteCaixas}
+                    value={regLojaLimiteCaixas ?? 0}
                     onChange={(e) => setRegLojaLimiteCaixas(parseInt(e.target.value) || 0)}
                   />
                 </div>
@@ -3638,7 +3755,7 @@ export default function App() {
                     min="0"
                     className="input-modal"
                     placeholder="Ex: 2"
-                    value={regLojaLimiteSupervisores}
+                    value={regLojaLimiteSupervisores ?? 0}
                     onChange={(e) => setRegLojaLimiteSupervisores(parseInt(e.target.value) || 0)}
                   />
                 </div>
@@ -3675,6 +3792,7 @@ export default function App() {
                   { key: 'gestao_caixa', icon: '💵', title: 'Gestão de Caixa & Sangria', desc: 'Abertura de turno, suprimento, sangria e fechamento conferido' },
                   { key: 'estoque', icon: '📦', title: 'Gestão de Estoque', desc: 'Permite cadastrar produtos, preços, marcas e lotes' },
                   { key: 'usuarios', icon: '👥', title: 'Gestão de Equipe', desc: 'Permite cadastrar e gerenciar operadores de caixa' },
+                  { key: 'devedores', icon: '💳', title: 'Área de Devedores / Fiado', desc: 'Gestão de clientes com compras fiadas, limites e pagamentos' },
                   { key: 'relatorios', icon: '📊', title: 'Relatórios de Vendas', desc: 'Acesso ao histórico de vendas e faturamento' },
                   { key: 'estorno', icon: '↩️', title: 'Estorno & Cancelamento', desc: 'Permite estornar vendas realizadas e devolver ao estoque' },
                   { key: 'graficos', icon: '📈', title: 'Gráficos & Analytics', desc: 'Acesso aos gráficos e curva de faturamento' },
@@ -4257,25 +4375,75 @@ export default function App() {
               </div>
             </div>
 
-            {/* ATALHOS DE PERMISSÃO */}
-            <div style={{ marginTop: '16px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <label className="rotulo-campo" style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--texto)', marginBottom: 0, flex: '1 1 200px', minWidth: 0 }}>
-                🔳 Quadrados de Permissão do Operador (Acessos e Permissões):
-              </label>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', width: '100%' }}>
+            {/* ATALHOS E PRESETS DE PERMISSÃO */}
+            <div style={{ marginTop: '16px', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                <label className="rotulo-campo" style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--texto)', marginBottom: 0 }}>
+                  🔳 Permissões Individuais do Funcionário:
+                </label>
+                <span
+                  style={{
+                    background: '#e0f2fe',
+                    color: '#0369a1',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    border: '1px solid #bae6fd',
+                  }}
+                >
+                  Liberadas: {Object.values(regOpPermissoes).filter(Boolean).length} de 17 funções
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', flex: 1, textAlign: 'center' }}
-                  onClick={() => aplicarPermissoesPorCargo('Operador de Caixa')}
+                  style={{ background: '#e0f2fe', color: '#0284c7', border: '1px solid #bae6fd', padding: '5px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => aplicarPresetPermissoes('caixa')}
+                  title="Permissões padrão para operador de frente de caixa"
                 >
-                  ⚡ Permissões de Caixa
+                  🛒 Perfil Caixa
                 </button>
                 <button
                   type="button"
-                  style={{ background: '#dcfce7', color: '#166534', border: 'none', padding: '6px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', flex: 1, textAlign: 'center' }}
-                  onClick={() => aplicarPermissoesPorCargo('Administrador')}
+                  style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '5px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => aplicarPresetPermissoes('repositor')}
+                  title="Permissões para controle e reposição de estoque"
                 >
-                  👑 Permissões de Admin
+                  📦 Perfil Estoquista
+                </button>
+                <button
+                  type="button"
+                  style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '5px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => aplicarPresetPermissoes('supervisor')}
+                  title="Permissões ampliadas de supervisor"
+                >
+                  👔 Perfil Supervisor
+                </button>
+                <button
+                  type="button"
+                  style={{ background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', padding: '5px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => aplicarPresetPermissoes('admin')}
+                  title="Liberar todas as 17 funções do sistema"
+                >
+                  👑 Acesso Total
+                </button>
+                <button
+                  type="button"
+                  style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', padding: '5px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => marcarTodasPermissoesOperador(true)}
+                  title="Marcar todas as caixas"
+                >
+                  ⚡ Marcar Todos
+                </button>
+                <button
+                  type="button"
+                  style={{ background: '#f8fafc', color: '#94a3b8', border: '1px solid #cbd5e1', padding: '5px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => marcarTodasPermissoesOperador(false)}
+                  title="Desmarcar todas as caixas"
+                >
+                  ❌ Limpar
                 </button>
               </div>
             </div>
@@ -4285,6 +4453,7 @@ export default function App() {
               {[
                 { key: 'vender', icon: '🛒', title: 'Realizar Vendas', desc: 'Registrar saídas no caixa do PDV e finalizar compras' },
                 { key: 'gestao_caixa', icon: '💵', title: 'Gestão de Caixa / Turno', desc: 'Abrir e fechar caixa, registrar sangrias e conferir gaveta' },
+                { key: 'gerenciar_devedores', icon: '💳', title: 'Área de Devedores / Fiado', desc: 'Cadastrar devedores, registrar compras fiado e receber pagamentos' },
                 { key: 'dar_desconto', icon: '💲', title: 'Dar Desconto', desc: 'Aplicar desconto no valor total da venda' },
                 { key: 'alterar_preco', icon: '✏️', title: 'Alterar Preço', desc: 'Mudar o valor unitário de venda do produto' },
                 { key: 'estornar_venda', icon: '↩️', title: 'Estornar / Cancelar Venda', desc: 'Cancelar venda e retornar itens ao estoque' },
