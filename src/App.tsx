@@ -41,6 +41,7 @@ import {
 } from './types';
 import { safeLocalStorageSet, safeLocalStorageGet } from './lib/safeStorage';
 import { comprimirImagemParaArmazenamento, calcularTamanhoImagemKB } from './lib/imageCompressor';
+import { screenWakeLockManager } from './lib/screenWakeLock';
 import {
   subscribeSupermercados,
   subscribeEstoque,
@@ -336,6 +337,9 @@ export default function App() {
   const [modalCaixaVisivel, setModalCaixaVisivel] = useState<boolean>(() => {
     return telaSalvaInicial === 'modal_caixa';
   });
+  const [abaCaixaInicial, setAbaCaixaInicial] = useState<'status' | 'sangria_suprimento' | 'fechamento'>('status');
+  const [motivoCaixaObrigatorio, setMotivoCaixaObrigatorio] = useState<string | null>(null);
+  const [telaSempreAtiva, setTelaSempreAtiva] = useState<boolean>(true);
   const [modalAlertasWhatsAppVisivel, setModalAlertasWhatsAppVisivel] = useState<boolean>(() => {
     return telaSalvaInicial === 'modal_alertas_whatsapp';
   });
@@ -741,6 +745,17 @@ export default function App() {
       setSessaoCaixaAtiva(null);
     }
   }, [supermercadoAtual, operadorAtivoId]);
+
+  // Keep Screen Awake (Tablet, Phone & Desktop Anti-Sleep Wake Lock)
+  useEffect(() => {
+    screenWakeLockManager.habilitar();
+    const unsub = screenWakeLockManager.subscribe((ativo) => {
+      setTelaSempreAtiva(ativo);
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   // Auditoria Handler
   const registrarLogAuditoria = (acao: string, detalhes: string) => {

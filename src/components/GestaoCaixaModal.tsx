@@ -13,6 +13,8 @@ interface GestaoCaixaModalProps {
   operadorAtivo: OperadorCaixa | null;
   loja: Supermercado | null;
   listaOperadores?: OperadorCaixa[];
+  abaInicial?: 'status' | 'sangria_suprimento' | 'fechamento';
+  motivoObrigatorio?: string | null;
 }
 
 export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
@@ -27,8 +29,16 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
   operadorAtivo,
   loja,
   listaOperadores = [],
+  abaInicial = 'status',
+  motivoObrigatorio = null,
 }) => {
-  const [aba, setAba] = useState<'status' | 'sangria_suprimento' | 'fechamento'>('status');
+  const [aba, setAba] = useState<'status' | 'sangria_suprimento' | 'fechamento'>(abaInicial);
+
+  React.useEffect(() => {
+    if (visivel) {
+      setAba(abaInicial);
+    }
+  }, [visivel, abaInicial]);
 
   // Form Abertura
   const [loginAbrir, setLoginAbrir] = useState<string>(operadorAtivo?.cpfOuUsuario || '');
@@ -265,6 +275,29 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
         ) : (
           <div>
             {/* TABS DE NAVEGAÇÃO INTERNA DO CAIXA */}
+            {motivoObrigatorio && (
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #f87171',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  marginBottom: '12px',
+                  color: '#991b1b',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                <div>
+                  <strong>Fechamento de Caixa Obrigatório:</strong>
+                  <div>{motivoObrigatorio}</div>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
               <button
                 className={`btn ${aba === 'status' ? 'btn-salvar' : ''}`}
