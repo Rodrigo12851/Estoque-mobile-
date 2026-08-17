@@ -40,7 +40,7 @@ import {
   LogAuditoria,
 } from './types';
 import { safeLocalStorageSet, safeLocalStorageGet } from './lib/safeStorage';
-import { comprimirImagemParaArmazenamento } from './lib/imageCompressor';
+import { comprimirImagemParaArmazenamento, calcularTamanhoImagemKB } from './lib/imageCompressor';
 import {
   subscribeSupermercados,
   subscribeEstoque,
@@ -2157,7 +2157,8 @@ export default function App() {
     const arq = e.target.files?.[0];
     if (!arq) return;
     try {
-      const compressed = await comprimirImagemParaArmazenamento(arq, 480, 0.75);
+      // Compresses to max 300px with ultra-compact WebP/JPEG (reducing 5MB raw photos down to ~15KB)
+      const compressed = await comprimirImagemParaArmazenamento(arq, 300, 0.68);
       setFotoTemp(compressed);
     } catch (err) {
       console.warn('Falha na compressão de imagem, usando fallback:', err);
@@ -2257,8 +2258,8 @@ export default function App() {
 
       try {
         let fotoFinal = fotoTemp;
-        if (fotoFinal && fotoFinal.startsWith('data:image')) {
-          fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 480, 0.75);
+        if (fotoFinal) {
+          fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 300, 0.68);
         }
 
         // Atualiza Catálogo Global
@@ -2312,8 +2313,8 @@ export default function App() {
 
     try {
       let fotoFinal = fotoTemp;
-      if (fotoFinal && fotoFinal.startsWith('data:image')) {
-        fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 480, 0.75);
+      if (fotoFinal) {
+        fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 300, 0.68);
       }
 
       // Update Global Catalog
@@ -5179,21 +5180,65 @@ export default function App() {
                   border: '1px solid #e2e8f0',
                   borderRadius: '8px',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '8px',
                   marginTop: '6px',
-                  height: '140px',
+                  minHeight: '140px',
+                  position: 'relative',
                 }}
               >
                 {fotoTemp ? (
-                  <img
-                    src={fotoTemp}
-                    alt="Preview Produto Fundo Branco"
-                    style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
-                  />
+                  <>
+                    <img
+                      src={fotoTemp}
+                      alt="Preview Produto Fundo Branco"
+                      style={{ maxHeight: '110px', maxWidth: '100%', objectFit: 'contain' }}
+                    />
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.75rem',
+                        color: '#166534',
+                      }}
+                    >
+                      <span>
+                        ⚡ <b>Otimizada:</b> ~{calcularTamanhoImagemKB(fotoTemp)} KB (Mínimo consumo do banco de dados)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFotoTemp('')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#dc2626',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          padding: '2px 6px',
+                        }}
+                        title="Remover foto"
+                      >
+                        ✕ Remover
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Sem foto (busque no Gemini ou envie um arquivo)</span>
+                  <div style={{ textAlign: 'center', padding: '10px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '0.82rem', marginBottom: '4px' }}>Sem foto vinculada</div>
+                    <div style={{ fontSize: '0.73rem', color: '#64748b' }}>
+                      💡 Envie fotos em qualquer resolução (celular/câmera/downloads): o sistema comprime automaticamente para o menor tamanho possível antes de salvar no banco.
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
