@@ -47,65 +47,27 @@ body {
     flex-direction: column;
 }
 
-@media (min-width: 768px) {
-    .container-cabecalho {
-        max-width: 1400px;
-        padding: 0 16px;
-    }
-    .espaco-topo {
-        max-width: 1400px;
-        padding: 0 20px;
-    }
-    .corpo-relatorio-cheio {
-        max-width: 1300px;
-        padding: 16px 20px 30px 20px;
-    }
-    .modal-container {
-        max-width: 760px;
-    }
-}
-
-@media (min-width: 1280px) {
-    .container-cabecalho {
-        max-width: 1700px;
-        padding: 0 24px;
-    }
-    .espaco-topo {
-        max-width: 1700px;
-        padding: 0 24px;
-    }
-}
-
-@media (min-width: 1536px) {
-    .container-cabecalho {
-        max-width: 1920px;
-        padding: 0 32px;
-    }
-    .espaco-topo {
-        max-width: 1920px;
-        padding: 0 32px;
-    }
-}
-
 .cabecalho {
     position: fixed; 
     top: 0; 
     left: 0; 
     right: 0; 
     background: var(--primario);
-    padding: 8px 12px; 
+    padding: 8px 16px; 
     box-shadow: 0 2px 6px rgba(0,0,0,0.1); 
     z-index: 200;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .container-cabecalho {
-    max-width: 1100px;
     width: 100%;
+    max-width: 100%;
     margin: 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 12px;
     min-width: 0;
 }
 
@@ -302,10 +264,12 @@ body {
 
 .espaco-topo { 
     margin-top: 75px; 
-    padding: 0 15px; 
-    max-width: 1100px;
+    padding: 0 16px; 
+    width: 100%;
+    max-width: 100%;
     margin-left: auto;
     margin-right: auto;
+    box-sizing: border-box;
 }
 
 .painel-alertas { 

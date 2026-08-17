@@ -2281,7 +2281,14 @@ export default function App() {
 
   // Stock Sale / Low Stock / Expiration Markdown
   const abrirVenda = (cod: string, val: string, lote: string) => {
-    const item = estoque.find((p) => p.codigo === cod && p.validade === val && p.lote === lote);
+    let item = estoque.find((p) => p.codigo === cod && p.validade === val && p.lote === lote);
+    if (!item) {
+      // If specific batch not found, prioritize an unexpired batch with positive stock
+      item = estoque.find((p) => {
+        const dt = new Date(p.validade + 'T00:00:00');
+        return p.codigo === cod && dt.getTime() > hoje.getTime() && p.quantidade > 0;
+      }) || estoque.find((p) => p.codigo === cod && p.quantidade > 0) || estoque.find((p) => p.codigo === cod);
+    }
     if (!item) return;
 
     setProdAtual(item);
@@ -2289,6 +2296,58 @@ export default function App() {
     setMsgVenda('');
     setModalNotificacoesVisivel(false);
     setModalVendaVisivel(true);
+  };
+
+  // Dedicated Handler for Loss Write-off (Dar Baixa por Perda / Vencimento) from Notifications
+  const handleDarBaixaPerda = (
+    codigo: string,
+    validade: string,
+    lote: string,
+    qtdPerda: number,
+    motivoPerda: string = 'Produto Vencido'
+  ) => {
+    const item = estoque.find((p) => p.codigo === codigo && p.validade === validade && p.lote === lote);
+    if (!item) return;
+
+    const qtdReal = Math.min(Math.max(1, qtdPerda), item.quantidade);
+    const novaQuantidade = item.quantidade - qtdReal;
+    let novoEstoque: ItemEstoque[];
+
+    if (novaQuantidade <= 0) {
+      novoEstoque = estoque.filter(
+        (p) => !(p.codigo === codigo && p.validade === validade && p.lote === lote)
+      );
+      excluirItemEstoqueFirestore(codigo, validade, lote, supermercadoAtual).catch((err) => {
+        console.warn('Aviso ao excluir item do Firestore:', err);
+      });
+    } else {
+      novoEstoque = estoque.map((p) => {
+        if (p.codigo === codigo && p.validade === validade && p.lote === lote) {
+          return { ...p, quantidade: novaQuantidade };
+        }
+        return p;
+      });
+      const itemAtualizado = novoEstoque.find(
+        (p) => p.codigo === codigo && p.validade === validade && p.lote === lote
+      );
+      if (itemAtualizado) {
+        salvarItemEstoqueFirestore(itemAtualizado, supermercadoAtual).catch((err) => {
+          console.warn('Aviso ao sincronizar perda no Firestore:', err);
+        });
+      }
+    }
+
+    setEstoque(novoEstoque);
+    safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
+
+    const opAtivo = listaOperadores.find((op) => op.id === operadorAtivoId);
+    const nomeOperador = opAtivo ? opAtivo.nome : 'Administrador do Supermercado';
+
+    registrarLogAuditoria(
+      'Baixa por Perda / Vencimento',
+      `Produto: ${item.nome} (${item.codigo}) | Qtd Baixada: ${qtdReal} un | Val: ${item.validade} | Lote: ${item.lote || 'N/D'} | Motivo: ${motivoPerda} | Operador: ${nomeOperador}`
+    );
+    notificarSincronizacao();
   };
 
   // Handlers para Gestão de Clientes Devedores (Fiado)
@@ -2394,7 +2453,11 @@ export default function App() {
       return;
     }
 
-    if (qtdBaixa > prodAtual.quantidade) {
+    const itemEmEstoque = estoque.find(
+      (p) => p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote
+    );
+
+    if (!itemEmEstoque || qtdBaixa > itemEmEstoque.quantidade) {
       setMsgVenda(<span style={{ color: 'var(--erro)' }}>Estoque insuficiente!</span>);
       return;
     }
@@ -2425,18 +2488,30 @@ export default function App() {
       }
     }
 
-    let novoEstoque = [...estoque];
-    const index = novoEstoque.findIndex(
-      (p) => p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote
-    );
+    const novaQuantidade = itemEmEstoque.quantidade - qtdBaixa;
+    let novoEstoque: ItemEstoque[];
 
-    if (index !== -1) {
-      novoEstoque[index].quantidade -= qtdBaixa;
-      if (novoEstoque[index].quantidade <= 0) {
-        novoEstoque = novoEstoque.filter(
-          (p) =>
-            !(p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote)
-        );
+    if (novaQuantidade <= 0) {
+      novoEstoque = estoque.filter(
+        (p) => !(p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote)
+      );
+      excluirItemEstoqueFirestore(prodAtual.codigo, prodAtual.validade, prodAtual.lote, supermercadoAtual).catch((err) => {
+        console.warn('Aviso ao excluir item do Firestore:', err);
+      });
+    } else {
+      novoEstoque = estoque.map((p) => {
+        if (p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote) {
+          return { ...p, quantidade: novaQuantidade };
+        }
+        return p;
+      });
+      const itemAtualizado = novoEstoque.find(
+        (p) => p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote
+      );
+      if (itemAtualizado) {
+        salvarItemEstoqueFirestore(itemAtualizado, supermercadoAtual).catch((err) => {
+          console.warn('Aviso ao atualizar item no Firestore:', err);
+        });
       }
     }
 
@@ -2525,9 +2600,6 @@ export default function App() {
 
     setEstoque(novoEstoque);
     safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
-    if (index !== -1 && novoEstoque[index]) {
-      salvarItemEstoqueFirestore(novoEstoque[index], supermercadoAtual);
-    }
     tocarSomSucessoVenda();
     setMsgVenda(
       <span style={{ color: 'var(--sucesso)' }}>
@@ -3238,8 +3310,16 @@ export default function App() {
                 <div className="vazio">Nenhum produto cadastrado no estoque desta loja.</div>
               ) : (
                 listaAgrupada.map((p) => {
-                  const primeiraValidade = p.lotes[0].validade;
-                  const primeiroLote = p.lotes[0].lote || '';
+                  const loteValido =
+                    p.lotes.find((l) => {
+                      const dt = new Date(l.validade + 'T00:00:00');
+                      return dt.getTime() > hoje.getTime() && l.qtd > 0;
+                    }) ||
+                    p.lotes.find((l) => l.qtd > 0) ||
+                    p.lotes[0];
+
+                  const primeiraValidade = loteValido?.validade || p.lotes[0]?.validade || '';
+                  const primeiroLote = loteValido?.lote || p.lotes[0]?.lote || '';
 
                   return (
                     <div className="card-produto" key={p.codigo}>
@@ -4981,7 +5061,7 @@ export default function App() {
       <div className="modal" id="modalVenda" style={{ display: modalVendaVisivel ? 'flex' : 'none' }}>
         <div className="modal-conteudo">
           <div className="cab-modal" id="titulo-modal-baixa">
-            {isProdAtualVencido ? 'Registro de Perda (Vencido)' : 'Baixa de Estoque'}
+            🛒 Baixa de Estoque / Realizar Venda
           </div>
           {prodAtual && (
             <div className="corpo-modal" id="corpo-venda">
@@ -4994,9 +5074,58 @@ export default function App() {
                   Cód: {prodAtual.codigo} | Lote: {prodAtual.lote || 'N/D'} | Val: {formatarData(prodAtual.validade)}
                 </p>
                 <p style={{ fontSize: '0.85rem', margin: '4px 0' }}>
-                  Venda: <b>R$ {prodAtual.preco_venda.toFixed(2)}</b> | Estoque: <b>{prodAtual.quantidade} un</b>
+                  Venda: <b>R$ {prodAtual.preco_venda.toFixed(2)}</b> | Estoque no Lote: <b>{prodAtual.quantidade} un</b>
                 </p>
+                {isProdAtualVencido && (
+                  <div
+                    style={{
+                      background: '#fee2e2',
+                      color: '#991b1b',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      marginTop: '4px',
+                    }}
+                  >
+                    ⚠️ Atenção: Este lote específico está vencido ({prodAtual.validade}). Para descartar como perda, acesse a Central de Notificações.
+                  </div>
+                )}
               </div>
+
+              {/* Se houver outros lotes em estoque deste mesmo produto, permitir selecionar o lote */}
+              {(() => {
+                const outrosLotes = estoque.filter((p) => p.codigo === prodAtual.codigo && p.quantidade > 0);
+                if (outrosLotes.length > 1) {
+                  return (
+                    <div className="grupo-input" style={{ marginTop: '8px' }}>
+                      <label className="rotulo-campo">Selecionar Lote / Validade:</label>
+                      <select
+                        className="input-modal"
+                        value={`${prodAtual.validade}_${prodAtual.lote}`}
+                        onChange={(e) => {
+                          const [val, lot] = e.target.value.split('_');
+                          const itemEscolhido = estoque.find(
+                            (it) => it.codigo === prodAtual.codigo && it.validade === val && it.lote === (lot || '')
+                          );
+                          if (itemEscolhido) {
+                            setProdAtual(itemEscolhido);
+                            setQtdBaixa(1);
+                          }
+                        }}
+                      >
+                        {outrosLotes.map((l) => (
+                          <option key={`${l.validade}_${l.lote}`} value={`${l.validade}_${l.lote}`}>
+                            Val: {formatarData(l.validade)} | Lote: {l.lote || 'N/D'} ({l.quantidade} un disp.)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <div className="grupo-input" style={{ marginTop: '10px' }}>
                 <label className="rotulo-campo">Forma de Pagamento</label>
                 <select
@@ -5088,10 +5217,10 @@ export default function App() {
               <div className="grupo-botoes">
                 <button
                   className="btn btn-salvar"
-                  style={{ background: isProdAtualVencido ? 'var(--erro)' : 'var(--sucesso)' }}
+                  style={{ background: 'var(--sucesso)' }}
                   onClick={confirmarBaixa}
                 >
-                  {isProdAtualVencido ? 'Perda' : 'Baixar'}
+                  Finalizar Venda / Baixar
                 </button>
                 <button className="btn btn-cancelar" onClick={() => setModalVendaVisivel(false)}>
                   Cancelar
@@ -5120,6 +5249,7 @@ export default function App() {
           setModalNotificacoesVisivel(false);
           abrirVenda(cod, val, lot);
         }}
+        onDarBaixaPerda={handleDarBaixaPerda}
         onAbrirAlertasWhatsApp={() => {
           setModalNotificacoesVisivel(false);
           if (verificarPermissaoOuAvisar('alertas_whatsapp', 'alertas_whatsapp', 'Alertas WhatsApp / E-mail')) {

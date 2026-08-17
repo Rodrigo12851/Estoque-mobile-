@@ -34,6 +34,7 @@ interface CentroNotificacoesModalProps {
     categoria?: string;
   }) => void;
   onAbrirVenda: (codigo: string, validade: string, lote: string) => void;
+  onDarBaixaPerda?: (codigo: string, validade: string, lote: string, qtdPerda: number, motivo?: string) => void;
   onAbrirAlertasWhatsApp: () => void;
   abaInicial?: 'estoque_baixo' | 'validade' | 'resumo';
 }
@@ -48,6 +49,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
   onAlterarLimiarEstoque,
   onAbrirReposicao,
   onAbrirVenda,
+  onDarBaixaPerda,
   onAbrirAlertasWhatsApp,
   abaInicial = 'estoque_baixo',
 }) => {
@@ -56,6 +58,10 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'zerados' | 'criticos' | 'baixos'>('todos');
   const [copiado, setCopiado] = useState<boolean>(false);
   const [limiarInput, setLimiarInput] = useState<string>(String(limiarEstoqueMinimo));
+  const [itemPerdaModal, setItemPerdaModal] = useState<ItemEstoque | null>(null);
+  const [qtdPerdaInput, setQtdPerdaInput] = useState<number>(1);
+  const [motivoPerdaInput, setMotivoPerdaInput] = useState<string>('Produto Vencido');
+  const [msgPerda, setMsgPerda] = useState<string>('');
 
   // Sync limiarInput when prop changes
   React.useEffect(() => {
@@ -894,7 +900,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           <button
                             type="button"
                             onClick={() => {
@@ -915,6 +921,35 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                             💬 Zap
                           </button>
 
+                          {dias <= 0 && onDarBaixaPerda && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setItemPerdaModal(p);
+                                setQtdPerdaInput(p.quantidade);
+                                setMotivoPerdaInput('Produto Vencido');
+                                setMsgPerda('');
+                              }}
+                              style={{
+                                background: '#dc2626',
+                                color: '#ffffff',
+                                border: 'none',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title="Dar baixa de descarte / perda neste produto vencido"
+                            >
+                              <span>🗑️</span>
+                              <span>Baixa Perda</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             onClick={() => onAbrirVenda(p.codigo, p.validade, p.lote || '')}
@@ -929,7 +964,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                               cursor: 'pointer',
                             }}
                           >
-                            Ver
+                            Vender / Ver
                           </button>
                         </div>
                       </div>
@@ -1059,6 +1094,190 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
           </button>
         </div>
       </div>
+
+      {/* DIÁLOGO / MODAL DE CONFIRMAÇÃO DE BAIXA POR PERDA / VENCIMENTO */}
+      {itemPerdaModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.7)',
+            zIndex: 4000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            backdropFilter: 'blur(3px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '14px',
+              maxWidth: '420px',
+              width: '100%',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+              overflow: 'hidden',
+              animation: 'fadeIn 0.2s ease-out',
+            }}
+          >
+            <div
+              style={{
+                background: '#dc2626',
+                color: '#ffffff',
+                padding: '14px 16px',
+                fontWeight: 700,
+                fontSize: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <span>🗑️</span>
+              <span>Registro de Baixa por Perda</span>
+            </div>
+
+            <div style={{ padding: '16px' }}>
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fca5a5',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  marginBottom: '14px',
+                }}
+              >
+                <b style={{ color: '#991b1b', fontSize: '0.92rem', display: 'block' }}>
+                  {itemPerdaModal.nome}
+                </b>
+                <div style={{ fontSize: '0.8rem', color: '#7f1d1d', marginTop: '4px' }}>
+                  <b>Cód:</b> {itemPerdaModal.codigo} | <b>Lote:</b> {itemPerdaModal.lote || 'N/D'}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#7f1d1d', marginTop: '2px' }}>
+                  <b>Validade:</b> {itemPerdaModal.validade} (Vencido)
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#991b1b', marginTop: '4px', fontWeight: 700 }}>
+                  Estoque disponível no lote: {itemPerdaModal.quantidade} un
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Quantidade para descartar / dar baixa:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={itemPerdaModal.quantidade}
+                  value={qtdPerdaInput}
+                  onChange={(e) => setQtdPerdaInput(parseInt(e.target.value, 10) || 0)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '0.95rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Motivo da Perda / Descarte:
+                </label>
+                <select
+                  value={motivoPerdaInput}
+                  onChange={(e) => setMotivoPerdaInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontSize: '0.88rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="Produto Vencido">❌ Produto Vencido (Prazo de Validade Expirado)</option>
+                  <option value="Avaria / Embalagem Violada">📦 Avaria / Embalagem Violada ou Danificada</option>
+                  <option value="Quebra / Degradação">💥 Quebra ou Degradação Física</option>
+                  <option value="Descarte Sanitário">⚠️ Descarte Sanitário / Vigilância</option>
+                </select>
+              </div>
+
+              {msgPerda && (
+                <div style={{ marginBottom: '12px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'center' }}>
+                  {msgPerda}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isNaN(qtdPerdaInput) || qtdPerdaInput < 1) {
+                      setMsgPerda('⚠️ Digite uma quantidade válida!');
+                      return;
+                    }
+                    if (qtdPerdaInput > itemPerdaModal.quantidade) {
+                      setMsgPerda('⚠️ Quantidade maior que o estoque no lote!');
+                      return;
+                    }
+
+                    if (onDarBaixaPerda) {
+                      onDarBaixaPerda(
+                        itemPerdaModal.codigo,
+                        itemPerdaModal.validade,
+                        itemPerdaModal.lote,
+                        qtdPerdaInput,
+                        motivoPerdaInput
+                      );
+                    }
+
+                    setMsgPerda('✅ Baixa de perda registrada com sucesso!');
+                    setTimeout(() => {
+                      setItemPerdaModal(null);
+                      setMsgPerda('');
+                    }, 700);
+                  }}
+                  style={{
+                    flex: 1,
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Confirmar Baixa de Perda
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setItemPerdaModal(null);
+                    setMsgPerda('');
+                  }}
+                  style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    border: '1px solid #cbd5e1',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
