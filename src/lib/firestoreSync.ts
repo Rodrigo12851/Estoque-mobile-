@@ -138,6 +138,12 @@ export function subscribeClientesDevedores(lojaId: string, callback: (clientes: 
   );
 }
 
+// Helper to sanitize document ID strings for Firestore (removes / \ spaces etc)
+export function sanitizarIdDoc(id: string): string {
+  if (!id) return 'doc_' + Date.now();
+  return String(id).replace(/[\/\\]/g, '_').replace(/[\s\t\n#?\[\]]/g, '_');
+}
+
 // Helper to sanitize objects for Firestore (removes undefined values recursively)
 function limparUndefined<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
@@ -146,7 +152,8 @@ function limparUndefined<T>(data: T): T {
 // Save or Update Supermercado
 export async function salvarSupermercadoFirestore(loja: Supermercado) {
   try {
-    const docRef = doc(db, 'supermercados', loja.id);
+    const docId = sanitizarIdDoc(loja.id);
+    const docRef = doc(db, 'supermercados', docId);
     await setDoc(docRef, limparUndefined(loja), { merge: true });
   } catch (err: any) {
     if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
@@ -160,7 +167,11 @@ export async function salvarSupermercadoFirestore(loja: Supermercado) {
 // Save or Update Item no Estoque
 export async function salvarItemEstoqueFirestore(item: ItemEstoque, lojaId: string) {
   try {
-    const docId = `${lojaId}_${item.codigo}_${item.validade || 'semval'}_${item.lote || 'semlote'}`;
+    const safeLojaId = sanitizarIdDoc(lojaId || 'loja_padrao');
+    const safeCod = sanitizarIdDoc(item.codigo || 'semcod');
+    const safeVal = sanitizarIdDoc(item.validade || 'semval');
+    const safeLote = sanitizarIdDoc(item.lote || 'semlote');
+    const docId = `${safeLojaId}_${safeCod}_${safeVal}_${safeLote}`;
     const docRef = doc(db, 'estoque', docId);
     await setDoc(docRef, limparUndefined({ ...item, lojaId }), { merge: true });
   } catch (err: any) {
@@ -169,6 +180,7 @@ export async function salvarItemEstoqueFirestore(item: ItemEstoque, lojaId: stri
     } else {
       console.error('Erro ao salvar item no estoque no Firestore:', err);
     }
+    throw err;
   }
 }
 
@@ -186,7 +198,8 @@ export async function sincronizarEstoqueCompletoFirestore(itens: ItemEstoque[], 
 // Save or Update Produto no Catálogo Global
 export async function salvarProdutoCatalogoFirestore(prod: ProdutoCatalogo) {
   try {
-    const docRef = doc(db, 'produtos_catalogo', prod.codigo);
+    const safeCod = sanitizarIdDoc(prod.codigo || 'semcod');
+    const docRef = doc(db, 'produtos_catalogo', safeCod);
     await setDoc(docRef, limparUndefined(prod), { merge: true });
   } catch (err: any) {
     if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
@@ -194,13 +207,15 @@ export async function salvarProdutoCatalogoFirestore(prod: ProdutoCatalogo) {
     } else {
       console.error('Erro ao salvar no catalogo global no Firestore:', err);
     }
+    throw err;
   }
 }
 
 // Save Venda
 export async function salvarVendaFirestore(venda: Venda) {
   try {
-    const docRef = doc(db, 'vendas', venda.id);
+    const docId = sanitizarIdDoc(venda.id);
+    const docRef = doc(db, 'vendas', docId);
     await setDoc(docRef, limparUndefined(venda), { merge: true });
   } catch (err) {
     console.error('Erro ao salvar venda no Firestore:', err);
@@ -210,7 +225,8 @@ export async function salvarVendaFirestore(venda: Venda) {
 // Save Operador
 export async function salvarOperadorFirestore(op: OperadorCaixa) {
   try {
-    const docRef = doc(db, 'operadores', op.id);
+    const docId = sanitizarIdDoc(op.id);
+    const docRef = doc(db, 'operadores', docId);
     await setDoc(docRef, limparUndefined(op), { merge: true });
   } catch (err) {
     console.error('Erro ao salvar operador no Firestore:', err);
@@ -220,7 +236,11 @@ export async function salvarOperadorFirestore(op: OperadorCaixa) {
 // Delete Item do Estoque
 export async function excluirItemEstoqueFirestore(codigo: string, validade: string, lote: string, lojaId: string) {
   try {
-    const docId = `${lojaId}_${codigo}_${validade || 'semval'}_${lote || 'semlote'}`;
+    const safeLojaId = sanitizarIdDoc(lojaId || 'loja_padrao');
+    const safeCod = sanitizarIdDoc(codigo || 'semcod');
+    const safeVal = sanitizarIdDoc(validade || 'semval');
+    const safeLote = sanitizarIdDoc(lote || 'semlote');
+    const docId = `${safeLojaId}_${safeCod}_${safeVal}_${safeLote}`;
     const docRef = doc(db, 'estoque', docId);
     await deleteDoc(docRef);
   } catch (err) {
@@ -231,7 +251,8 @@ export async function excluirItemEstoqueFirestore(codigo: string, validade: stri
 // Delete Produto do Catálogo Global
 export async function excluirProdutoCatalogoFirestore(codigo: string) {
   try {
-    const docRef = doc(db, 'produtos_catalogo', codigo);
+    const safeCod = sanitizarIdDoc(codigo || 'semcod');
+    const docRef = doc(db, 'produtos_catalogo', safeCod);
     await deleteDoc(docRef);
   } catch (err) {
     console.error('Erro ao excluir produto do catálogo no Firestore:', err);
@@ -241,7 +262,8 @@ export async function excluirProdutoCatalogoFirestore(codigo: string) {
 // Delete Supermercado
 export async function excluirSupermercadoFirestore(lojaId: string) {
   try {
-    const docRef = doc(db, 'supermercados', lojaId);
+    const docId = sanitizarIdDoc(lojaId);
+    const docRef = doc(db, 'supermercados', docId);
     await deleteDoc(docRef);
   } catch (err) {
     console.error('Erro ao excluir supermercado no Firestore:', err);
@@ -251,7 +273,8 @@ export async function excluirSupermercadoFirestore(lojaId: string) {
 // Delete Operador
 export async function excluirOperadorFirestore(opId: string) {
   try {
-    const docRef = doc(db, 'operadores', opId);
+    const docId = sanitizarIdDoc(opId);
+    const docRef = doc(db, 'operadores', docId);
     await deleteDoc(docRef);
   } catch (err) {
     console.error('Erro ao excluir operador no Firestore:', err);
@@ -261,7 +284,8 @@ export async function excluirOperadorFirestore(opId: string) {
 // Save or Update Cliente Devedor
 export async function salvarClienteDevedorFirestore(cliente: ClienteDevedor) {
   try {
-    const docRef = doc(db, 'clientes_devedores', cliente.id);
+    const docId = sanitizarIdDoc(cliente.id);
+    const docRef = doc(db, 'clientes_devedores', docId);
     await setDoc(docRef, limparUndefined(cliente), { merge: true });
   } catch (err) {
     console.error('Erro ao salvar cliente devedor no Firestore:', err);
@@ -271,7 +295,8 @@ export async function salvarClienteDevedorFirestore(cliente: ClienteDevedor) {
 // Delete Cliente Devedor
 export async function excluirClienteDevedorFirestore(clienteId: string) {
   try {
-    const docRef = doc(db, 'clientes_devedores', clienteId);
+    const docId = sanitizarIdDoc(clienteId);
+    const docRef = doc(db, 'clientes_devedores', docId);
     await deleteDoc(docRef);
   } catch (err) {
     console.error('Erro ao excluir cliente devedor no Firestore:', err);

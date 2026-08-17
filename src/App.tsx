@@ -39,6 +39,8 @@ import {
   MovimentacaoCaixa,
   LogAuditoria,
 } from './types';
+import { safeLocalStorageSet, safeLocalStorageGet } from './lib/safeStorage';
+import { comprimirImagemParaArmazenamento } from './lib/imageCompressor';
 import {
   subscribeSupermercados,
   subscribeEstoque,
@@ -416,7 +418,7 @@ export default function App() {
       },
     ];
 
-    localStorage.setItem(`vendas_${storeId}`, JSON.stringify(vendasIniciais));
+    safeLocalStorageSet(`vendas_${storeId}`, JSON.stringify(vendasIniciais));
     return vendasIniciais;
   });
 
@@ -430,7 +432,7 @@ export default function App() {
     if (!jaMigrou) {
       migrarDiretamenteDoBancoAntigoParaNovo().then((res) => {
         if (res.sucesso) {
-          localStorage.setItem('migracao_auto_banco_antigo_concluida_v1', 'true');
+          safeLocalStorageSet('migracao_auto_banco_antigo_concluida_v1', 'true');
           console.log('Migração automática do banco antigo concluída:', res.detalhe);
         }
       }).catch((e) => console.warn('Aviso na migracao automatica:', e));
@@ -439,13 +441,13 @@ export default function App() {
     // Subscribe to Supermercados
     const unsubLojas = subscribeSupermercados((lojas) => {
       setListaSupermercados(lojas);
-      localStorage.setItem('lista_supermercados_app', JSON.stringify(lojas));
+      safeLocalStorageSet('lista_supermercados_app', JSON.stringify(lojas));
     });
 
     // Subscribe to Catálogo Global
     const unsubCat = subscribeCatalogo((prods) => {
       setCatalogoGlobal(prods);
-      localStorage.setItem('catalogoGlobalFirebase', JSON.stringify(prods));
+      safeLocalStorageSet('catalogoGlobalFirebase', JSON.stringify(prods));
     });
 
     return () => {
@@ -554,25 +556,25 @@ export default function App() {
     // Subscribe to Estoque for active store
     const unsubEstoque = subscribeEstoque(supermercadoAtual, (itens) => {
       setEstoque(itens);
-      localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(itens));
+      safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(itens));
     });
 
     // Subscribe to Vendas for active store
     const unsubVendas = subscribeVendas(supermercadoAtual, (listaVendas) => {
       setVendas(listaVendas);
-      localStorage.setItem(`vendas_${supermercadoAtual}`, JSON.stringify(listaVendas));
+      safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify(listaVendas));
     });
 
     // Subscribe to Operadores for active store
     const unsubOperadores = subscribeOperadores(supermercadoAtual, (ops) => {
       setListaOperadores(ops);
-      localStorage.setItem(`operadores_caixa_${supermercadoAtual}`, JSON.stringify(ops));
+      safeLocalStorageSet(`operadores_caixa_${supermercadoAtual}`, JSON.stringify(ops));
     });
 
     // Subscribe to Clientes Devedores for active store
     const unsubDevedores = subscribeClientesDevedores(supermercadoAtual, (clientes) => {
       setClientesDevedores(clientes);
-      localStorage.setItem(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(clientes));
+      safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(clientes));
     });
 
     return () => {
@@ -2013,16 +2015,22 @@ export default function App() {
     }
   };
 
-  // Image Upload Handling
-  const carregarFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Image Upload Handling with Automatic Canvas Compression
+  const carregarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const arq = e.target.files?.[0];
     if (!arq) return;
-    const leitor = new FileReader();
-    leitor.onload = (ev) => {
-      const result = ev.target?.result as string;
-      setFotoTemp(result);
-    };
-    leitor.readAsDataURL(arq);
+    try {
+      const compressed = await comprimirImagemParaArmazenamento(arq, 480, 0.75);
+      setFotoTemp(compressed);
+    } catch (err) {
+      console.warn('Falha na compressão de imagem, usando fallback:', err);
+      const leitor = new FileReader();
+      leitor.onload = (ev) => {
+        const result = ev.target?.result as string;
+        setFotoTemp(result);
+      };
+      leitor.readAsDataURL(arq);
+    }
   };
 
   // Add / Edit Product Modal
@@ -2091,13 +2099,13 @@ export default function App() {
         (p) => !(p.codigo === cod && p.validade === val && p.lote === lote)
       );
       setEstoque(novoEstoque);
-      localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
+      safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
       excluirItemEstoqueFirestore(cod, val, lote, supermercadoAtual);
       notificarSincronizacao();
     }
   };
 
-  const salvarProduto = () => {
+  const salvarProduto = async () => {
     const codigoDigitado = cadCod.trim();
     const nomeDigitado = cadNome.trim();
     const marcaDigitada = cadMarca.trim();
@@ -2110,7 +2118,68 @@ export default function App() {
         return;
       }
 
-      // Atualiza Catálogo Global
+      try {
+        let fotoFinal = fotoTemp;
+        if (fotoFinal && fotoFinal.startsWith('data:image')) {
+          fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 480, 0.75);
+        }
+
+        // Atualiza Catálogo Global
+        const novoCatalogo = [...catalogoGlobal];
+        const indexCat = novoCatalogo.findIndex((c) => c.codigo === codigoDigitado);
+        const dadosGlobal: ProdutoCatalogo = {
+          codigo: codigoDigitado,
+          nome: nomeDigitado,
+          marca: marcaDigitada,
+          categoria: categoriaDigitada || 'Geral',
+          unidade_medida: 'un',
+          imagem: fotoFinal,
+          descricao: nomeDigitado,
+        };
+
+        if (indexCat !== -1) {
+          novoCatalogo[indexCat] = dadosGlobal;
+        } else {
+          novoCatalogo.push(dadosGlobal);
+        }
+        setCatalogoGlobal(novoCatalogo);
+        safeLocalStorageSet('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
+        salvarProdutoCatalogoFirestore(dadosGlobal).catch((err) => {
+          console.warn('Aviso ao sincronizar produto master no Firestore:', err);
+        });
+
+        setMsgCad(<span style={{ color: 'var(--sucesso)' }}>✅ Produto salvo no Banco de Dados Master com sucesso!</span>);
+        notificarSincronizacao();
+
+        setTimeout(() => {
+          setModalCadastroVisivel(false);
+        }, 700);
+      } catch (err: any) {
+        console.error('Erro ao salvar produto master:', err);
+        setMsgCad(<span style={{ color: 'var(--erro)' }}>Erro ao salvar: {err?.message || 'Falha inesperada'}</span>);
+      }
+      return;
+    }
+
+    // MODO ESTOQUE DA LOJA (Adicionar ao Estoque da Loja Selecionada com Quantidade, Validade, Preço de Custo e Venda)
+    const qtdDigitada = parseInt(String(cadQtd).replace(/\D/g, ''), 10) || 0;
+    const loteDigitado = cadLote.trim() || `LOTE-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const valDigitada = cadVal.trim();
+    const custoDigitado = typeof cadCusto === 'string' ? (parseFloat(cadCusto.replace(',', '.')) || 0) : Number(cadCusto) || 0;
+    const precoDigitado = typeof cadPreco === 'string' ? parseFloat(cadPreco.replace(',', '.')) : Number(cadPreco);
+
+    if (!codigoDigitado || !nomeDigitado || qtdDigitada <= 0 || !valDigitada || isNaN(precoDigitado) || precoDigitado <= 0) {
+      setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha todos os campos obrigatórios (Código, Nome, Quantidade ≥ 1, Validade e Preço de Venda)!</span>);
+      return;
+    }
+
+    try {
+      let fotoFinal = fotoTemp;
+      if (fotoFinal && fotoFinal.startsWith('data:image')) {
+        fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 480, 0.75);
+      }
+
+      // Update Global Catalog
       const novoCatalogo = [...catalogoGlobal];
       const indexCat = novoCatalogo.findIndex((c) => c.codigo === codigoDigitado);
       const dadosGlobal: ProdutoCatalogo = {
@@ -2119,7 +2188,7 @@ export default function App() {
         marca: marcaDigitada,
         categoria: categoriaDigitada || 'Geral',
         unidade_medida: 'un',
-        imagem: fotoTemp,
+        imagem: fotoFinal,
         descricao: nomeDigitado,
       };
 
@@ -2129,120 +2198,85 @@ export default function App() {
         novoCatalogo.push(dadosGlobal);
       }
       setCatalogoGlobal(novoCatalogo);
-      localStorage.setItem('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
-      salvarProdutoCatalogoFirestore(dadosGlobal);
+      safeLocalStorageSet('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
+      salvarProdutoCatalogoFirestore(dadosGlobal).catch((err) => {
+        console.warn('Aviso ao sincronizar produto no catálogo Firestore:', err);
+      });
 
-      setMsgCad(<span style={{ color: 'var(--sucesso)' }}>✅ Produto salvo no Banco de Dados Master com sucesso!</span>);
-      notificarSincronizacao();
+      // Update Selected Store Inventory
+      let novoEstoque = [...estoque];
+      if (codigoEditando) {
+        novoEstoque = novoEstoque.filter(
+          (p) =>
+            !(
+              p.codigo === codigoEditando.codigo &&
+              p.validade === codigoEditando.validade &&
+              p.lote === codigoEditando.lote
+            )
+        );
+      }
 
-      setTimeout(() => {
-        setModalCadastroVisivel(false);
-      }, 800);
-      return;
-    }
-
-    // MODO ESTOQUE DA LOJA (Adicionar ao Estoque da Loja Selecionada com Quantidade, Validade, Preço de Custo e Venda)
-    const qtdDigitada = parseInt(cadQtd, 10);
-    const loteDigitado = cadLote.trim() || `LOTE-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-    const valDigitada = cadVal;
-    const custoDigitado = parseFloat(cadCusto) || 0;
-    const precoDigitado = parseFloat(cadPreco);
-
-    if (!codigoDigitado || !nomeDigitado || isNaN(qtdDigitada) || !valDigitada || isNaN(precoDigitado)) {
-      setMsgCad(<span style={{ color: 'var(--erro)' }}>Preencha todos os campos obrigatórios (Código, Nome, Quantidade, Validade e Preço de Venda)!</span>);
-      return;
-    }
-
-    // Update Global Catalog
-    const novoCatalogo = [...catalogoGlobal];
-    const indexCat = novoCatalogo.findIndex((c) => c.codigo === codigoDigitado);
-    const dadosGlobal: ProdutoCatalogo = {
-      codigo: codigoDigitado,
-      nome: nomeDigitado,
-      marca: marcaDigitada,
-      categoria: categoriaDigitada || 'Geral',
-      unidade_medida: 'un',
-      imagem: fotoTemp,
-      descricao: nomeDigitado,
-    };
-
-    if (indexCat !== -1) {
-      novoCatalogo[indexCat] = dadosGlobal;
-    } else {
-      novoCatalogo.push(dadosGlobal);
-    }
-    setCatalogoGlobal(novoCatalogo);
-    localStorage.setItem('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
-    salvarProdutoCatalogoFirestore(dadosGlobal);
-
-    // Update Selected Store Inventory
-    let novoEstoque = [...estoque];
-    if (codigoEditando) {
-      novoEstoque = novoEstoque.filter(
-        (p) =>
-          !(
-            p.codigo === codigoEditando.codigo &&
-            p.validade === codigoEditando.validade &&
-            p.lote === codigoEditando.lote
-          )
+      const indexExistente = novoEstoque.findIndex(
+        (p) => p.codigo === codigoDigitado && p.validade === valDigitada && p.lote === loteDigitado
       );
-    }
 
-    const indexExistente = novoEstoque.findIndex(
-      (p) => p.codigo === codigoDigitado && p.validade === valDigitada && p.lote === loteDigitado
-    );
+      if (indexExistente !== -1 && !codigoEditando) {
+        novoEstoque[indexExistente].quantidade += qtdDigitada;
+        novoEstoque[indexExistente].preco_venda = precoDigitado;
+        novoEstoque[indexExistente].preco_custo = custoDigitado;
+        novoEstoque[indexExistente].categoria = categoriaDigitada || 'Geral';
+        novoEstoque[indexExistente].marca = marcaDigitada;
+        if (fotoFinal) novoEstoque[indexExistente].foto = fotoFinal;
+      } else {
+        novoEstoque.push({
+          codigo_barras: codigoDigitado,
+          codigo: codigoDigitado,
+          nome: nomeDigitado,
+          marca: marcaDigitada,
+          categoria: categoriaDigitada || 'Geral',
+          quantidade: qtdDigitada,
+          lote: loteDigitado,
+          validade: valDigitada,
+          preco_custo: custoDigitado,
+          preco_venda: precoDigitado,
+          foto: fotoFinal,
+        });
+      }
 
-    if (indexExistente !== -1 && !codigoEditando) {
-      novoEstoque[indexExistente].quantidade += qtdDigitada;
-      novoEstoque[indexExistente].preco_venda = precoDigitado;
-      novoEstoque[indexExistente].preco_custo = custoDigitado;
-      novoEstoque[indexExistente].categoria = categoriaDigitada || 'Geral';
-      novoEstoque[indexExistente].marca = marcaDigitada;
-      if (fotoTemp) novoEstoque[indexExistente].foto = fotoTemp;
-    } else {
-      novoEstoque.push({
+      const itemSalvar: ItemEstoque = {
         codigo_barras: codigoDigitado,
         codigo: codigoDigitado,
         nome: nomeDigitado,
         marca: marcaDigitada,
         categoria: categoriaDigitada || 'Geral',
-        quantidade: qtdDigitada,
+        quantidade: indexExistente !== -1 && !codigoEditando ? novoEstoque[indexExistente].quantidade : qtdDigitada,
         lote: loteDigitado,
         validade: valDigitada,
         preco_custo: custoDigitado,
         preco_venda: precoDigitado,
-        foto: fotoTemp,
+        foto: fotoFinal,
+      };
+
+      setEstoque(novoEstoque);
+      safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
+      salvarItemEstoqueFirestore(itemSalvar, supermercadoAtual).catch((err) => {
+        console.warn('Aviso ao sincronizar item de estoque no Firestore:', err);
       });
+
+      setMsgCad(
+        <span style={{ color: 'var(--sucesso)' }}>
+          ✅ {codigoEditando ? 'Item atualizado com sucesso!' : `Produto adicionado ao estoque de ${nomeSupermercadoAtivo}!`}
+        </span>
+      );
+      notificarSincronizacao();
+
+      setTimeout(() => {
+        setModalCadastroVisivel(false);
+      }, 700);
+    } catch (err: any) {
+      console.error('Erro ao salvar produto no estoque:', err);
+      setMsgCad(<span style={{ color: 'var(--erro)' }}>Erro ao salvar: {err?.message || 'Falha inesperada'}</span>);
     }
-
-    const itemSalvar: ItemEstoque = {
-      codigo_barras: codigoDigitado,
-      codigo: codigoDigitado,
-      nome: nomeDigitado,
-      marca: marcaDigitada,
-      categoria: categoriaDigitada || 'Geral',
-      quantidade: indexExistente !== -1 && !codigoEditando ? novoEstoque[indexExistente].quantidade : qtdDigitada,
-      lote: loteDigitado,
-      validade: valDigitada,
-      preco_custo: custoDigitado,
-      preco_venda: precoDigitado,
-      foto: fotoTemp,
-    };
-
-    setEstoque(novoEstoque);
-    localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
-    salvarItemEstoqueFirestore(itemSalvar, supermercadoAtual);
-
-    setMsgCad(
-      <span style={{ color: 'var(--sucesso)' }}>
-        ✅ {codigoEditando ? 'Item atualizado com sucesso!' : `Produto adicionado ao estoque de ${nomeSupermercadoAtivo}!`}
-      </span>
-    );
-    notificarSincronizacao();
-
-    setTimeout(() => {
-      setModalCadastroVisivel(false);
-    }, 800);
   };
 
   // Stock Sale / Low Stock / Expiration Markdown
@@ -2267,7 +2301,7 @@ export default function App() {
       novosClientes.unshift(cliente);
     }
     setClientesDevedores(novosClientes);
-    localStorage.setItem(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
+    safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
     salvarClienteDevedorFirestore(cliente);
     notificarSincronizacao();
   };
@@ -2275,7 +2309,7 @@ export default function App() {
   const handleExcluirClienteDevedor = (clienteId: string) => {
     const novosClientes = clientesDevedores.filter((c) => c.id !== clienteId);
     setClientesDevedores(novosClientes);
-    localStorage.setItem(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
+    safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
     excluirClienteDevedorFirestore(clienteId);
     notificarSincronizacao();
   };
@@ -2465,13 +2499,13 @@ export default function App() {
 
       const novosClientes = clientesDevedores.map((c) => (c.id === clienteAtualizado.id ? clienteAtualizado : c));
       setClientesDevedores(novosClientes);
-      localStorage.setItem(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
+      safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
       salvarClienteDevedorFirestore(clienteAtualizado);
     }
 
     const novasVendas = [novaVenda, ...vendas];
     setVendas(novasVendas);
-    localStorage.setItem(`vendas_${supermercadoAtual}`, JSON.stringify(novasVendas));
+    safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify(novasVendas));
 
     // Offline Queueing & Firestore Sync
     if (!navigator.onLine) {
@@ -2490,7 +2524,7 @@ export default function App() {
     );
 
     setEstoque(novoEstoque);
-    localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
+    safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
     if (index !== -1 && novoEstoque[index]) {
       salvarItemEstoqueFirestore(novoEstoque[index], supermercadoAtual);
     }
@@ -2558,10 +2592,10 @@ export default function App() {
     });
 
     setEstoque(novoEstoque);
-    localStorage.setItem(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
+    safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
 
     setVendas(novasVendas);
-    localStorage.setItem(`vendas_${supermercadoAtual}`, JSON.stringify(novasVendas));
+    safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify(novasVendas));
 
     salvarVendaFirestore(novasVendas[vendaIndex]);
     venda.itens.forEach((itemVenda) => {
@@ -2593,7 +2627,7 @@ export default function App() {
     const val = Math.max(1, Math.floor(novoValor));
     setLimiarEstoqueMinimo(val);
     const currentStoreId = localStorage.getItem('supermercadoAtualId') || 'loja_matriz_01';
-    localStorage.setItem(`limiar_estoque_minimo_${currentStoreId}`, String(val));
+    safeLocalStorageSet(`limiar_estoque_minimo_${currentStoreId}`, String(val));
   };
 
   // Quick Reorder Helper (Pre-populates new stock batch modal from notification center)
