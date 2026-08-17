@@ -138,12 +138,31 @@ export default function App() {
     destinoLeitorRef.current = destinoLeitor;
   }, [destinoLeitor]);
 
+  // Screen Persistence on Reload/Refresh
+  const telaSalvaInicial = (() => {
+    try {
+      return localStorage.getItem('tela_ativa_sistema') || '';
+    } catch {
+      return '';
+    }
+  })();
+
   // Modals visibility
-  const [modalSupermercadoVisivel, setModalSupermercadoVisivel] = useState<boolean>(false);
-  const [modalCadastroVisivel, setModalCadastroVisivel] = useState<boolean>(false);
+  const [modalSupermercadoVisivel, setModalSupermercadoVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_supermercados' || telaSalvaInicial === 'modal_banco_dados_master';
+  });
+  const [modalCadastroVisivel, setModalCadastroVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_cadastro_estoque' || telaSalvaInicial === 'modal_cadastro_master';
+  });
   const [modalVendaVisivel, setModalVendaVisivel] = useState<boolean>(false);
-  const [modalNotificacoesVisivel, setModalNotificacoesVisivel] = useState<boolean>(false);
-  const [abaNotificacoesInicial, setAbaNotificacoesInicial] = useState<'estoque_baixo' | 'validade' | 'resumo'>('estoque_baixo');
+  const [modalNotificacoesVisivel, setModalNotificacoesVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial.startsWith('modal_notificacoes_');
+  });
+  const [abaNotificacoesInicial, setAbaNotificacoesInicial] = useState<'estoque_baixo' | 'validade' | 'resumo'>(() => {
+    if (telaSalvaInicial === 'modal_notificacoes_validade') return 'validade';
+    if (telaSalvaInicial === 'modal_notificacoes_resumo') return 'resumo';
+    return 'estoque_baixo';
+  });
 
   // User-Defined Low Stock Reorder Threshold
   const [limiarEstoqueMinimo, setLimiarEstoqueMinimo] = useState<number>(() => {
@@ -153,9 +172,19 @@ export default function App() {
   });
 
   // Full Screen Report
-  const [relatorioCheioVisivel, setRelatorioCheioVisivel] = useState<boolean>(false);
-  const [modoRelatorioAtual, setModoRelatorioAtual] = useState<'estoque' | 'catalogo'>('estoque');
-  const [buscaRelatorio, setBuscaRelatorio] = useState<string>('');
+  const [relatorioCheioVisivel, setRelatorioCheioVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'relatorio_catalogo' || telaSalvaInicial === 'relatorio_estoque';
+  });
+  const [modoRelatorioAtual, setModoRelatorioAtual] = useState<'estoque' | 'catalogo'>(() => {
+    return telaSalvaInicial === 'relatorio_catalogo' ? 'catalogo' : 'estoque';
+  });
+  const [buscaRelatorio, setBuscaRelatorio] = useState<string>(() => {
+    try {
+      return localStorage.getItem('busca_relatorio_salva') || '';
+    } catch {
+      return '';
+    }
+  });
   const [consultandoEAN, setConsultandoEAN] = useState<boolean>(false);
 
   // Supermarket Form & Store List
@@ -180,7 +209,9 @@ export default function App() {
   const [buscaLoja, setBuscaLoja] = useState<string>('');
   const [senhasVisiveisLista, setSenhasVisiveisLista] = useState<Record<string, boolean>>({});
 
-  const [abaDonaApp, setAbaDonaApp] = useState<'supermercados' | 'banco_dados'>('supermercados');
+  const [abaDonaApp, setAbaDonaApp] = useState<'supermercados' | 'banco_dados'>(() => {
+    return telaSalvaInicial === 'modal_banco_dados_master' ? 'banco_dados' : 'supermercados';
+  });
   const [buscaMasterBd, setBuscaMasterBd] = useState<string>('');
   const [filtroMasterOrigem, setFiltroMasterOrigem] = useState<'todos' | 'catalogo' | 'estoque'>('todos');
 
@@ -236,7 +267,9 @@ export default function App() {
   });
 
   // Operator Modal & Form States
-  const [modalOperadoresVisivel, setModalOperadoresVisivel] = useState<boolean>(false);
+  const [modalOperadoresVisivel, setModalOperadoresVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_operadores';
+  });
   const [opEditandoId, setOpEditandoId] = useState<string | null>(null);
   const [regOpNome, setRegOpNome] = useState<string>('');
   const [regOpCpf, setRegOpCpf] = useState<string>('');
@@ -275,7 +308,9 @@ export default function App() {
   const [msgVenda, setMsgVenda] = useState<React.ReactNode>('');
 
   // Debtors / Fiado Management States
-  const [modalDevedoresVisivel, setModalDevedoresVisivel] = useState<boolean>(false);
+  const [modalDevedoresVisivel, setModalDevedoresVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_devedores';
+  });
   const [clientesDevedores, setClientesDevedores] = useState<ClienteDevedor[]>(() => {
     const storeId = localStorage.getItem('supermercadoAtualId') || 'loja_matriz_01';
     const salvo = localStorage.getItem(`clientes_devedores_${storeId}`);
@@ -286,14 +321,24 @@ export default function App() {
   });
 
   // Vendas, Estornos & Gráficos Modals
-  const [modalRelatorioVendasVisivel, setModalRelatorioVendasVisivel] = useState<boolean>(false);
-  const [modalGraficosVendasVisivel, setModalGraficosVendasVisivel] = useState<boolean>(false);
+  const [modalRelatorioVendasVisivel, setModalRelatorioVendasVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_relatorio_vendas';
+  });
+  const [modalGraficosVendasVisivel, setModalGraficosVendasVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_graficos_vendas';
+  });
   const [vendaCupomVer, setVendaCupomVer] = useState<Venda | null>(null);
-  const [modalEtiquetasVisivel, setModalEtiquetasVisivel] = useState<boolean>(false);
+  const [modalEtiquetasVisivel, setModalEtiquetasVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_etiquetas';
+  });
 
   // New Features: Gestão de Caixa, Alertas WhatsApp, Offline & PIN
-  const [modalCaixaVisivel, setModalCaixaVisivel] = useState<boolean>(false);
-  const [modalAlertasWhatsAppVisivel, setModalAlertasWhatsAppVisivel] = useState<boolean>(false);
+  const [modalCaixaVisivel, setModalCaixaVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_caixa';
+  });
+  const [modalAlertasWhatsAppVisivel, setModalAlertasWhatsAppVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_alertas_whatsapp';
+  });
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [vendasPendentesCount, setVendasPendentesCount] = useState<number>(0);
 
@@ -632,6 +677,71 @@ export default function App() {
     };
   }, [supermercadoAtual]);
 
+  // Persist Current View / Screen to Prevent Navigation Reset on Reload
+  useEffect(() => {
+    let telaAtual = 'home';
+    if (relatorioCheioVisivel) {
+      telaAtual = modoRelatorioAtual === 'catalogo' ? 'relatorio_catalogo' : 'relatorio_estoque';
+    } else if (modalSupermercadoVisivel) {
+      telaAtual = abaDonaApp === 'banco_dados' ? 'modal_banco_dados_master' : 'modal_supermercados';
+    } else if (modalRelatorioVendasVisivel) {
+      telaAtual = 'modal_relatorio_vendas';
+    } else if (modalGraficosVendasVisivel) {
+      telaAtual = 'modal_graficos_vendas';
+    } else if (modalEtiquetasVisivel) {
+      telaAtual = 'modal_etiquetas';
+    } else if (modalCaixaVisivel) {
+      telaAtual = 'modal_caixa';
+    } else if (modalDevedoresVisivel) {
+      telaAtual = 'modal_devedores';
+    } else if (modalAlertasWhatsAppVisivel) {
+      telaAtual = 'modal_alertas_whatsapp';
+    } else if (modalNotificacoesVisivel) {
+      telaAtual = `modal_notificacoes_${abaNotificacoesInicial}`;
+    } else if (modalOperadoresVisivel) {
+      telaAtual = 'modal_operadores';
+    } else if (modalCadastroVisivel) {
+      telaAtual = modoCadastroItem === 'master' ? 'modal_cadastro_master' : 'modal_cadastro_estoque';
+    }
+
+    safeLocalStorageSet('tela_ativa_sistema', telaAtual);
+    safeLocalStorageSet('busca_relatorio_salva', buscaRelatorio);
+  }, [
+    relatorioCheioVisivel,
+    modoRelatorioAtual,
+    buscaRelatorio,
+    modalSupermercadoVisivel,
+    abaDonaApp,
+    modalRelatorioVendasVisivel,
+    modalGraficosVendasVisivel,
+    modalEtiquetasVisivel,
+    modalCaixaVisivel,
+    modalDevedoresVisivel,
+    modalAlertasWhatsAppVisivel,
+    modalNotificacoesVisivel,
+    abaNotificacoesInicial,
+    modalOperadoresVisivel,
+    modalCadastroVisivel,
+    modoCadastroItem,
+  ]);
+
+  // Sync Cash Shift Session on Store or Operator Change
+  useEffect(() => {
+    try {
+      const opId = operadorAtivoId || 'op_padrao';
+      const salvo =
+        localStorage.getItem(`sessao_caixa_${supermercadoAtual}_${opId}`) ||
+        localStorage.getItem(`sessao_caixa_${supermercadoAtual}`);
+      if (salvo) {
+        setSessaoCaixaAtiva(JSON.parse(salvo));
+      } else {
+        setSessaoCaixaAtiva(null);
+      }
+    } catch {
+      setSessaoCaixaAtiva(null);
+    }
+  }, [supermercadoAtual, operadorAtivoId]);
+
   // Auditoria Handler
   const registrarLogAuditoria = (acao: string, detalhes: string) => {
     const opAtivo = listaOperadores.find((op) => op.id === operadorAtivoId);
@@ -857,6 +967,28 @@ export default function App() {
     if (listaSalva) {
       try {
         setListaSupermercados(JSON.parse(listaSalva));
+      } catch (e) {}
+    }
+
+    const opId = localStorage.getItem('operadorAtivoId') || 'op_padrao';
+    const sessSalva = localStorage.getItem(`sessao_caixa_${storeId}_${opId}`) || localStorage.getItem(`sessao_caixa_${storeId}`);
+    if (sessSalva) {
+      try {
+        setSessaoCaixaAtiva(JSON.parse(sessSalva));
+      } catch (e) {}
+    }
+
+    const movSalva = localStorage.getItem(`movimentacoes_caixa_${storeId}`);
+    if (movSalva) {
+      try {
+        setMovimentacoesCaixa(JSON.parse(movSalva));
+      } catch (e) {}
+    }
+
+    const devSalvo = localStorage.getItem(`clientes_devedores_${storeId}`);
+    if (devSalvo) {
+      try {
+        setClientesDevedores(JSON.parse(devSalvo));
       } catch (e) {}
     }
   };
@@ -1566,6 +1698,11 @@ export default function App() {
       // Verificação de Etiqueta de Balança (EAN-13 começando com '2')
       const resBalanca = processarCodigoBarraBalanca(codLimpo, estoque);
       if (resBalanca.isBalanca && resBalanca.itemEncontrado) {
+        if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+          alert('⚠️ O Caixa está FECHADO!\n\nPara realizar vendas e ler produtos no caixa/balança, é obrigatório abrir o turno de caixa primeiro.');
+          setModalCaixaVisivel(true);
+          return;
+        }
         setProdAtual(resBalanca.itemEncontrado);
         setQtdBaixa(resBalanca.quantidadeCalculada || 1);
         setMsgVenda(
@@ -2281,6 +2418,14 @@ export default function App() {
 
   // Stock Sale / Low Stock / Expiration Markdown
   const abrirVenda = (cod: string, val: string, lote: string) => {
+    if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+      alert(
+        '⚠️ O Caixa está FECHADO!\n\nPara realizar vendas e baixar itens do estoque, é obrigatório abrir o turno do caixa primeiro (informando o troco inicial).'
+      );
+      setModalCaixaVisivel(true);
+      return;
+    }
+
     let item = estoque.find((p) => p.codigo === cod && p.validade === val && p.lote === lote);
     if (!item) {
       // If specific batch not found, prioritize an unexpired batch with positive stock
@@ -2448,6 +2593,16 @@ export default function App() {
   };
 
   const confirmarBaixa = () => {
+    if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+      setMsgVenda(
+        <span style={{ color: 'var(--erro)', fontWeight: 700 }}>
+          ⚠️ Caixa fechado! Abra o turno de caixa antes de concluir vendas.
+        </span>
+      );
+      setModalCaixaVisivel(true);
+      return;
+    }
+
     if (!prodAtual || isNaN(qtdBaixa) || qtdBaixa < 1) {
       setMsgVenda(<span style={{ color: 'var(--erro)' }}>Digite uma quantidade válida!</span>);
       return;
@@ -5214,10 +5369,50 @@ export default function App() {
                   {(prodAtual.preco_venda * (isNaN(qtdBaixa) ? 0 : qtdBaixa)).toFixed(2).replace('.', ',')}
                 </span>
               </div>
+
+              {(!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') && (
+                <div
+                  style={{
+                    background: '#fee2e2',
+                    border: '1px solid #f87171',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    margin: '10px 0',
+                    textAlign: 'center',
+                    color: '#991b1b',
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  <div>🔴 Caixa Fechado! Abra o turno de caixa para concluir vendas.</div>
+                  <button
+                    type="button"
+                    className="btn btn-salvar"
+                    style={{
+                      background: '#dc2626',
+                      marginTop: '6px',
+                      padding: '6px 14px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                    }}
+                    onClick={() => {
+                      setModalVendaVisivel(false);
+                      setModalCaixaVisivel(true);
+                    }}
+                  >
+                    💵 Abrir Turno de Caixa Agora →
+                  </button>
+                </div>
+              )}
+
               <div className="grupo-botoes">
                 <button
                   className="btn btn-salvar"
-                  style={{ background: 'var(--sucesso)' }}
+                  style={{
+                    background: (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') ? '#94a3b8' : 'var(--sucesso)',
+                    cursor: (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') ? 'not-allowed' : 'pointer',
+                  }}
+                  disabled={!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto'}
                   onClick={confirmarBaixa}
                 >
                   Finalizar Venda / Baixar
