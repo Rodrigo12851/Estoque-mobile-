@@ -646,121 +646,131 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                           background: corCard,
                           border: `1px solid ${bordaCard}`,
                           borderRadius: '10px',
-                          padding: '10px 12px',
+                          padding: '12px',
                           display: 'flex',
-                          alignItems: 'center',
+                          flexDirection: 'column',
                           gap: '10px',
-                          transition: 'transform 0.15s ease',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                         }}
                       >
-                        {/* FOTO DO PRODUTO */}
-                        <div
-                          style={{
-                            width: '46px',
-                            height: '46px',
-                            borderRadius: '8px',
-                            background: '#ffffff',
-                            border: '1px solid rgba(0,0,0,0.08)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {prod.foto ? (
-                            <img
-                              src={prod.foto}
-                              alt={prod.nome}
-                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                            />
-                          ) : (
-                            <span style={{ fontSize: '1.2rem' }}>📦</span>
-                          )}
-                        </div>
-
-                        {/* DETALHES DO PRODUTO */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <b
-                              style={{
-                                fontSize: '0.88rem',
-                                color: '#0f172a',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {prod.nome}
-                            </b>
-                            <span
-                              style={{
-                                background: corBadge,
-                                color: '#ffffff',
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                              }}
-                            >
-                              {textoBadge}
-                            </span>
+                        {/* FOTO + DETALHES DO PRODUTO */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}>
+                          <div
+                            style={{
+                              width: '46px',
+                              height: '46px',
+                              borderRadius: '8px',
+                              background: '#ffffff',
+                              border: '1px solid rgba(0,0,0,0.08)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {prod.foto ? (
+                              <img
+                                src={prod.foto}
+                                alt={prod.nome}
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                              />
+                            ) : (
+                              <span style={{ fontSize: '1.2rem' }}>📦</span>
+                            )}
                           </div>
 
-                          <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '2px' }}>
-                            Cód: <b>{prod.codigo}</b> | Venda: <b>R$ {prod.preco_venda.toFixed(2)}</b>
-                            {prod.preco_custo ? ` | Custo: R$ ${prod.preco_custo.toFixed(2)}` : ''}
-                          </div>
-
-                          {/* BARRA INDICADORA DE ESTOQUE */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                            <div
-                              style={{
-                                flex: 1,
-                                height: '6px',
-                                background: 'rgba(0,0,0,0.08)',
-                                borderRadius: '3px',
-                                overflow: 'hidden',
-                              }}
-                            >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <div
                                 style={{
-                                  width: `${Math.min(100, (prod.qtdTotal / limiarEstoqueMinimo) * 100)}%`,
-                                  height: '100%',
-                                  background: corBadge,
+                                  fontSize: '0.92rem',
+                                  color: '#0f172a',
+                                  fontWeight: 700,
+                                  lineHeight: 1.35,
+                                  wordBreak: 'break-word',
                                 }}
-                              ></div>
+                              >
+                                {prod.nome}
+                              </div>
+                              <span
+                                style={{
+                                  background: corBadge,
+                                  color: '#ffffff',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                }}
+                              >
+                                {textoBadge}
+                              </span>
                             </div>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#334155' }}>
-                              Repor: <b>+{prod.qtdSugeridaRepor} un</b>
-                            </span>
+
+                            <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '3px', lineHeight: 1.4 }}>
+                              Cód: <b>{prod.codigo}</b> | Venda: <b>R$ {prod.preco_venda.toFixed(2)}</b>
+                              {prod.preco_custo ? ` | Custo: R$ ${prod.preco_custo.toFixed(2)}` : ''}
+                            </div>
+
+                            {/* BARRA INDICADORA DE ESTOQUE */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                              <div
+                                style={{
+                                  flex: 1,
+                                  height: '6px',
+                                  background: 'rgba(0,0,0,0.08)',
+                                  borderRadius: '3px',
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: `${Math.min(100, (prod.qtdTotal / limiarEstoqueMinimo) * 100)}%`,
+                                    height: '100%',
+                                    background: corBadge,
+                                  }}
+                                ></div>
+                              </div>
+                              <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>
+                                Repor: <b>+{prod.qtdSugeridaRepor} un</b>
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* BOTÕES DE AÇÃO */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0 }}>
+                        {/* BOTÕES DE AÇÃO RESPONSIVOS */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '6px',
+                            width: '100%',
+                            paddingTop: '4px',
+                            borderTop: '1px solid rgba(0,0,0,0.06)',
+                          }}
+                        >
                           <button
                             type="button"
                             onClick={() => onAbrirReposicao(prod)}
                             style={{
+                              flex: 1.5,
                               background: '#0284c7',
                               color: '#ffffff',
                               border: 'none',
-                              padding: '6px 10px',
+                              padding: '8px 12px',
                               borderRadius: '6px',
-                              fontSize: '0.75rem',
+                              fontSize: '0.78rem',
                               fontWeight: 700,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               gap: '4px',
-                              whiteSpace: 'nowrap',
+                              boxShadow: '0 1px 2px rgba(2,132,199,0.2)',
                             }}
                             title="Entrada rápida de novo lote / reposição"
                           >
                             <span>➕</span>
-                            <span>Repor</span>
+                            <span>Repor Estoque</span>
                           </button>
 
                           <button
@@ -770,18 +780,20 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                               window.open(`https://wa.me/?text=${encodeURIComponent(msgItem)}`, '_blank');
                             }}
                             style={{
+                              flex: 1,
                               background: '#25d366',
                               color: '#ffffff',
                               border: 'none',
-                              padding: '4px 8px',
+                              padding: '8px 10px',
                               borderRadius: '6px',
-                              fontSize: '0.72rem',
-                              fontWeight: 600,
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               gap: '4px',
+                              boxShadow: '0 1px 2px rgba(37,211,102,0.2)',
                             }}
                             title="Enviar pedido individual no WhatsApp"
                           >
@@ -851,7 +863,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                   <b>Nenhum alerta de validade nos próximos 10 dias!</b>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {proximoVencimento.map((p) => {
                     const dataVal = new Date(p.validade + 'T00:00:00');
                     const dias = Math.round((dataVal.getTime() - hoje.getTime()) / 86400000);
@@ -860,6 +872,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                     let corFundo = '#fef3c7';
                     let corTexto = '#92400e';
                     let borda = '#fde68a';
+                    let corBadge = '#d97706';
 
                     if (dias < 0) {
                       const diasPassados = Math.abs(dias);
@@ -867,14 +880,18 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                       corFundo = '#fee2e2';
                       corTexto = '#991b1b';
                       borda = '#fca5a5';
+                      corBadge = '#dc2626';
                     } else if (dias === 0) {
                       textoStatus = '🚨 Vence HOJE';
                       corFundo = '#fee2e2';
                       corTexto = '#991b1b';
                       borda = '#fca5a5';
+                      corBadge = '#dc2626';
                     } else {
                       textoStatus = `⚠️ Vence em ${dias} dia(s)`;
                     }
+
+                    const fotoItem = p.foto || catalogoGlobal.find((c) => c.codigo === p.codigo)?.imagem;
 
                     return (
                       <div
@@ -882,25 +899,86 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                         style={{
                           background: corFundo,
                           border: `1px solid ${borda}`,
-                          padding: '10px 12px',
-                          borderRadius: '8px',
+                          padding: '12px',
+                          borderRadius: '10px',
                           display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: '8px',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                         }}
                       >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <b style={{ color: '#0f172a', fontSize: '0.88rem' }}>{p.nome}</b>
-                          <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '2px' }}>
-                            Cód: {p.codigo} | Lote: {p.lote || 'N/D'} | Qtd: <b>{p.quantidade} un</b>
+                        {/* CABEÇALHO DO PRODUTO: FOTO + NOME COMPLETO + STATUS */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}>
+                          <div
+                            style={{
+                              width: '46px',
+                              height: '46px',
+                              borderRadius: '8px',
+                              background: '#ffffff',
+                              border: '1px solid rgba(0,0,0,0.08)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {fotoItem ? (
+                              <img
+                                src={fotoItem}
+                                alt={p.nome}
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                              />
+                            ) : (
+                              <span style={{ fontSize: '1.2rem' }}>📦</span>
+                            )}
                           </div>
-                          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: corTexto, marginTop: '2px' }}>
-                            {textoStatus} ({p.validade})
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                color: '#0f172a',
+                                fontSize: '0.92rem',
+                                fontWeight: 700,
+                                lineHeight: 1.35,
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {p.nome}
+                            </div>
+
+                            <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '4px', lineHeight: 1.4 }}>
+                              Cód: <b>{p.codigo}</b> | Lote: <b>{p.lote || 'N/D'}</b> | Qtd: <b>{p.quantidade} un</b>
+                            </div>
+
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                              <span
+                                style={{
+                                  background: corBadge,
+                                  color: '#ffffff',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                }}
+                              >
+                                {textoStatus} ({p.validade})
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {/* LINHA DE AÇÕES RESPONSIVA DE LARGURA TOTAL */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '6px',
+                            flexWrap: 'wrap',
+                            width: '100%',
+                            paddingTop: '4px',
+                            borderTop: '1px solid rgba(0,0,0,0.06)',
+                          }}
+                        >
                           <button
                             type="button"
                             onClick={() => {
@@ -908,17 +986,24 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                               window.open(`https://wa.me/?text=${encodeURIComponent(msgItem)}`, '_blank');
                             }}
                             style={{
+                              flex: '1 1 80px',
                               background: '#25d366',
                               color: '#ffffff',
                               border: 'none',
-                              padding: '6px 8px',
+                              padding: '8px 10px',
                               borderRadius: '6px',
-                              fontSize: '0.72rem',
-                              fontWeight: 600,
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
                               cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                              boxShadow: '0 1px 2px rgba(37,211,102,0.2)',
                             }}
                           >
-                            💬 Zap
+                            <span>💬</span>
+                            <span>Zap</span>
                           </button>
 
                           {dias <= 0 && onDarBaixaPerda && (
@@ -931,17 +1016,20 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                                 setMsgPerda('');
                               }}
                               style={{
+                                flex: '1.2 1 110px',
                                 background: '#dc2626',
                                 color: '#ffffff',
                                 border: 'none',
-                                padding: '6px 10px',
+                                padding: '8px 10px',
                                 borderRadius: '6px',
-                                fontSize: '0.75rem',
+                                fontSize: '0.78rem',
                                 fontWeight: 700,
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
+                                justifyContent: 'center',
                                 gap: '4px',
+                                boxShadow: '0 1px 2px rgba(220,38,38,0.2)',
                               }}
                               title="Dar baixa de descarte / perda neste produto vencido"
                             >
@@ -954,17 +1042,24 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                             type="button"
                             onClick={() => onAbrirVenda(p.codigo, p.validade, p.lote || '')}
                             style={{
+                              flex: '1.2 1 100px',
                               background: '#0284c7',
                               color: '#ffffff',
                               border: 'none',
-                              padding: '6px 10px',
+                              padding: '8px 10px',
                               borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
                               cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                              boxShadow: '0 1px 2px rgba(2,132,199,0.2)',
                             }}
                           >
-                            Vender / Ver
+                            <span>🛒</span>
+                            <span>Vender / Ver</span>
                           </button>
                         </div>
                       </div>
