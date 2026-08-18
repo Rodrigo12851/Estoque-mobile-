@@ -52,6 +52,8 @@ import {
   salvarSupermercadoFirestore,
   salvarItemEstoqueFirestore,
   salvarProdutoCatalogoFirestore,
+  buscarProdutoCatalogoFirestore,
+  buscarItemEstoquePorCodigoFirestore,
   salvarVendaFirestore,
   salvarOperadorFirestore,
   salvarClienteDevedorFirestore,
@@ -944,6 +946,13 @@ export default function App() {
 
     tocarSomSucessoVenda();
     alert(`🔒 Caixa FECHADO com sucesso!\n\nConfirmado por: ${validacao.operador.nome}\nEsperado: R$ ${dinheiroEsperado.toFixed(2)}\nInformado: R$ ${dinheiroInformado.toFixed(2)}\nResultado: ${statusDiff}`);
+
+    if (motivoCaixaObrigatorio) {
+      setMotivoCaixaObrigatorio(null);
+      setModalCaixaVisivel(false);
+      setTelaLoginVisivel(true);
+    }
+
     return { sucesso: true };
   };
 
@@ -1520,6 +1529,18 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // Se for operador de caixa e o turno ainda estiver aberto, bloquear a saída e exigir o fechamento do caixa
+    if (perfilAtivo === 'caixa' && sessaoCaixaAtiva && sessaoCaixaAtiva.status === 'aberto') {
+      alert(
+        '⚠️ ATENÇÃO: Seu turno de Caixa ainda está ABERTO!\n\n' +
+        'Para manter a segurança financeira e evitar bagunça na gaveta e no relatório, você deve FECHAR O CAIXA (conferência de valores) antes de sair ou trocar de conta.'
+      );
+      setAbaCaixaInicial('fechamento');
+      setMotivoCaixaObrigatorio('Você solicitou sair/trocar de conta. Faça a contagem dos valores e feche seu caixa para encerrar a sessão com segurança.');
+      setModalCaixaVisivel(true);
+      return;
+    }
+    setMotivoCaixaObrigatorio(null);
     setTelaLoginVisivel(true);
   };
 
@@ -2151,11 +2172,12 @@ export default function App() {
     }
   };
 
-  // Product Catalog Look Up
-  const verificarCatalogoCodigo = (cod: string) => {
+  // Product Catalog Look Up & Auto-fill (Memória Local + Firestore Direto)
+  const verificarCatalogoCodigo = async (cod: string) => {
     const codigoLimpo = cod.trim();
     if (!codigoLimpo) return;
 
+    // 1. Busca no catálogo compartilhado em memória
     const itemCat = catalogoGlobal.find((c) => c.codigo === codigoLimpo);
     if (itemCat && itemCat.nome) {
       setCadNome(itemCat.nome || '');
@@ -2164,6 +2186,55 @@ export default function App() {
       if (itemCat.imagem) {
         setFotoTemp(itemCat.imagem);
       }
+      const itemEstoqueExistente = estoque.find((e) => e.codigo === codigoLimpo);
+      if (itemEstoqueExistente) {
+        if (itemEstoqueExistente.preco_venda && !cadPreco) setCadPreco(String(itemEstoqueExistente.preco_venda));
+        if (itemEstoqueExistente.preco_custo && !cadCusto) setCadCusto(String(itemEstoqueExistente.preco_custo));
+      }
+      return;
+    }
+
+    // 2. Busca no estoque local da loja ativa
+    const itemEst = estoque.find((e) => e.codigo === codigoLimpo);
+    if (itemEst && itemEst.nome) {
+      setCadNome(itemEst.nome);
+      if (itemEst.marca) setCadMarca(itemEst.marca);
+      if (itemEst.categoria) setCadCategoria(itemEst.categoria);
+      if (itemEst.foto) setFotoTemp(itemEst.foto);
+      if (itemEst.preco_venda && !cadPreco) setCadPreco(String(itemEst.preco_venda));
+      if (itemEst.preco_custo && !cadCusto) setCadCusto(String(itemEst.preco_custo));
+      return;
+    }
+
+    // 3. Consulta direta em tempo real no banco de dados Firestore (Catálogo Master + Estoque)
+    try {
+      const prodRemoto = await buscarProdutoCatalogoFirestore(codigoLimpo);
+      if (prodRemoto && prodRemoto.nome) {
+        setCadNome(prodRemoto.nome);
+        if (prodRemoto.marca) setCadMarca(prodRemoto.marca);
+        if (prodRemoto.categoria) setCadCategoria(prodRemoto.categoria);
+        if (prodRemoto.imagem) setFotoTemp(prodRemoto.imagem);
+
+        setCatalogoGlobal((prev) => {
+          if (prev.some((p) => p.codigo === prodRemoto.codigo)) return prev;
+          const novo = [...prev, prodRemoto];
+          safeLocalStorageSet('catalogoGlobalFirebase', JSON.stringify(novo));
+          return novo;
+        });
+        return;
+      }
+
+      const itemRemotoEstoque = await buscarItemEstoquePorCodigoFirestore(codigoLimpo);
+      if (itemRemotoEstoque && itemRemotoEstoque.nome) {
+        setCadNome(itemRemotoEstoque.nome);
+        if (itemRemotoEstoque.marca) setCadMarca(itemRemotoEstoque.marca);
+        if (itemRemotoEstoque.categoria) setCadCategoria(itemRemotoEstoque.categoria);
+        if (itemRemotoEstoque.foto) setFotoTemp(itemRemotoEstoque.foto);
+        if (itemRemotoEstoque.preco_venda && !cadPreco) setCadPreco(String(itemRemotoEstoque.preco_venda));
+        if (itemRemotoEstoque.preco_custo && !cadCusto) setCadCusto(String(itemRemotoEstoque.preco_custo));
+      }
+    } catch (e) {
+      console.warn('Consulta Firestore em tempo real:', e);
     }
   };
 
@@ -2272,6 +2343,7 @@ export default function App() {
       }
 
       try {
+        setMsgCad(<span style={{ color: 'var(--primario)' }}>⏳ Gravando diretamente no Banco de Dados Firestore...</span>);
         let fotoFinal = fotoTemp;
         if (fotoFinal) {
           fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 300, 0.68);
@@ -2297,9 +2369,9 @@ export default function App() {
         }
         setCatalogoGlobal(novoCatalogo);
         safeLocalStorageSet('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
-        salvarProdutoCatalogoFirestore(dadosGlobal).catch((err) => {
-          console.warn('Aviso ao sincronizar produto master no Firestore:', err);
-        });
+        
+        // Salva diretamente no Firestore
+        await salvarProdutoCatalogoFirestore(dadosGlobal);
 
         setMsgCad(<span style={{ color: 'var(--sucesso)' }}>✅ Produto salvo no Banco de Dados Master com sucesso!</span>);
         notificarSincronizacao();
@@ -2327,12 +2399,13 @@ export default function App() {
     }
 
     try {
+      setMsgCad(<span style={{ color: 'var(--primario)' }}>⏳ Gravando diretamente no Banco de Dados Firestore...</span>);
       let fotoFinal = fotoTemp;
       if (fotoFinal) {
         fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 300, 0.68);
       }
 
-      // Update Global Catalog
+      // 1. Grava no Catálogo Global de Produtos (compartilhado entre todas as lojas e disponível para leitura automática de código de barras)
       const novoCatalogo = [...catalogoGlobal];
       const indexCat = novoCatalogo.findIndex((c) => c.codigo === codigoDigitado);
       const dadosGlobal: ProdutoCatalogo = {
@@ -2352,11 +2425,9 @@ export default function App() {
       }
       setCatalogoGlobal(novoCatalogo);
       safeLocalStorageSet('catalogoGlobalFirebase', JSON.stringify(novoCatalogo));
-      salvarProdutoCatalogoFirestore(dadosGlobal).catch((err) => {
-        console.warn('Aviso ao sincronizar produto no catálogo Firestore:', err);
-      });
+      await salvarProdutoCatalogoFirestore(dadosGlobal);
 
-      // Update Selected Store Inventory
+      // 2. Grava no Estoque da Loja Selecionada
       let novoEstoque = [...estoque];
       if (codigoEditando) {
         novoEstoque = novoEstoque.filter(
@@ -2412,13 +2483,11 @@ export default function App() {
 
       setEstoque(novoEstoque);
       safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
-      salvarItemEstoqueFirestore(itemSalvar, supermercadoAtual).catch((err) => {
-        console.warn('Aviso ao sincronizar item de estoque no Firestore:', err);
-      });
+      await salvarItemEstoqueFirestore(itemSalvar, supermercadoAtual);
 
       setMsgCad(
         <span style={{ color: 'var(--sucesso)' }}>
-          ✅ {codigoEditando ? 'Item atualizado com sucesso!' : `Produto adicionado ao estoque de ${nomeSupermercadoAtivo}!`}
+          ✅ {codigoEditando ? 'Item atualizado com sucesso no Banco de Dados!' : `Produto salvo diretamente no Banco de Dados e no estoque de ${nomeSupermercadoAtivo}!`}
         </span>
       );
       notificarSincronizacao();
@@ -3141,11 +3210,6 @@ export default function App() {
             <span>🚪</span>
             <span>Trocar / Sair</span>
           </button>
-        </div>
-
-        <div className="status-sync-topo" title="Status de Sincronização em Tempo Real">
-          <span className="sync-dot-live" style={{ background: isOnline ? '#22c55e' : '#f59e0b' }}></span>
-          <span>{isOnline ? 'Online • Firebase Ativo' : 'Offline (Local)'}</span>
         </div>
       </div>
 
@@ -5574,7 +5638,11 @@ export default function App() {
       {/* MODAL DE GESTÃO DO TURNO DE CAIXA, SANGRIA E FECHAMENTO */}
       <GestaoCaixaModal
         visivel={modalCaixaVisivel}
-        onFechar={() => setModalCaixaVisivel(false)}
+        onFechar={() => {
+          setModalCaixaVisivel(false);
+          setMotivoCaixaObrigatorio(null);
+          setAbaCaixaInicial('status');
+        }}
         sessaoAtiva={sessaoCaixaAtiva}
         vendasSessao={vendas}
         movimentacoes={movimentacoesCaixa}
@@ -5584,6 +5652,8 @@ export default function App() {
         operadorAtivo={listaOperadores.find((op) => op.id === operadorAtivoId) || null}
         loja={listaSupermercados.find((l) => l.id === supermercadoAtual) || null}
         listaOperadores={listaOperadores}
+        abaInicial={abaCaixaInicial}
+        motivoObrigatorio={motivoCaixaObrigatorio}
       />
 
       {/* MODAL DE ALERTAS DE VALIDADE NO WHATSAPP / E-MAIL */}

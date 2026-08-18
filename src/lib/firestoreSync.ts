@@ -8,6 +8,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   getFirestore,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -69,9 +70,7 @@ export function subscribeCatalogo(callback: (produtos: ProdutoCatalogo[]) => voi
       snapshot.forEach((docSnap) => {
         prods.push(docSnap.data() as ProdutoCatalogo);
       });
-      if (prods.length > 0) {
-        callback(prods);
-      }
+      callback(prods);
     },
     (err) => {
       console.warn('Firestore catalogo listener error:', err);
@@ -208,6 +207,50 @@ export async function salvarProdutoCatalogoFirestore(prod: ProdutoCatalogo) {
       console.error('Erro ao salvar no catalogo global no Firestore:', err);
     }
     throw err;
+  }
+}
+
+// Direct Lookup in Firestore Catalog by Barcode
+export async function buscarProdutoCatalogoFirestore(codigo: string): Promise<ProdutoCatalogo | null> {
+  try {
+    const cleanCod = codigo.trim();
+    if (!cleanCod) return null;
+    const safeCod = sanitizarIdDoc(cleanCod);
+    const docRef = doc(db, 'produtos_catalogo', safeCod);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as ProdutoCatalogo;
+    }
+    // Try query if ID was stored differently
+    const q = query(collection(db, 'produtos_catalogo'), where('codigo', '==', cleanCod));
+    const qSnap = await getDocs(q);
+    if (!qSnap.empty) {
+      return qSnap.docs[0].data() as ProdutoCatalogo;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Aviso ao consultar produto no catalogo do Firestore:', err);
+    return null;
+  }
+}
+
+// Direct Lookup in Firestore Inventory by Barcode (across current store or any store)
+export async function buscarItemEstoquePorCodigoFirestore(codigo: string, lojaId?: string): Promise<ItemEstoque | null> {
+  try {
+    const cleanCod = codigo.trim();
+    if (!cleanCod) return null;
+    const colRef = collection(db, 'estoque');
+    const q = lojaId
+      ? query(colRef, where('codigo', '==', cleanCod), where('lojaId', '==', lojaId))
+      : query(colRef, where('codigo', '==', cleanCod));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as ItemEstoque;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Aviso ao consultar item no estoque do Firestore:', err);
+    return null;
   }
 }
 
