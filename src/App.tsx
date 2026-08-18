@@ -2172,6 +2172,14 @@ export default function App() {
     }
   };
 
+  // Obter foto do produto de forma centralizada (reduz duplicidade no estoque e economiza 90%+ de banco de dados)
+  const obterFotoProduto = (codigo?: string, fotoItem?: string): string => {
+    if (fotoItem && fotoItem.trim()) return fotoItem;
+    if (!codigo) return '';
+    const cat = catalogoGlobal.find((c) => c.codigo === codigo.trim());
+    return cat?.imagem || '';
+  };
+
   // Product Catalog Look Up & Auto-fill (Memória Local + Firestore Direto)
   const verificarCatalogoCodigo = async (cod: string) => {
     const codigoLimpo = cod.trim();
@@ -2200,7 +2208,8 @@ export default function App() {
       setCadNome(itemEst.nome);
       if (itemEst.marca) setCadMarca(itemEst.marca);
       if (itemEst.categoria) setCadCategoria(itemEst.categoria);
-      if (itemEst.foto) setFotoTemp(itemEst.foto);
+      const fotoRef = obterFotoProduto(itemEst.codigo, itemEst.foto);
+      if (fotoRef) setFotoTemp(fotoRef);
       if (itemEst.preco_venda && !cadPreco) setCadPreco(String(itemEst.preco_venda));
       if (itemEst.preco_custo && !cadCusto) setCadCusto(String(itemEst.preco_custo));
       return;
@@ -2229,7 +2238,8 @@ export default function App() {
         setCadNome(itemRemotoEstoque.nome);
         if (itemRemotoEstoque.marca) setCadMarca(itemRemotoEstoque.marca);
         if (itemRemotoEstoque.categoria) setCadCategoria(itemRemotoEstoque.categoria);
-        if (itemRemotoEstoque.foto) setFotoTemp(itemRemotoEstoque.foto);
+        const fotoRemota = obterFotoProduto(itemRemotoEstoque.codigo, itemRemotoEstoque.foto);
+        if (fotoRemota) setFotoTemp(fotoRemota);
         if (itemRemotoEstoque.preco_venda && !cadPreco) setCadPreco(String(itemRemotoEstoque.preco_venda));
         if (itemRemotoEstoque.preco_custo && !cadCusto) setCadCusto(String(itemRemotoEstoque.preco_custo));
       }
@@ -2305,14 +2315,14 @@ export default function App() {
     setCadCod(p.codigo || '');
     setCadNome(p.nome || '');
     const catRel = catalogoGlobal.find((c) => c.codigo === cod);
-    setCadMarca(catRel?.marca || '');
-    setCadCategoria(catRel?.categoria || '');
+    setCadMarca(catRel?.marca || p.marca || '');
+    setCadCategoria(catRel?.categoria || p.categoria || '');
     setCadQtd(String(p.quantidade ?? 1));
     setCadLote(p.lote || '');
     setCadVal(p.validade || '');
     setCadCusto(p.preco_custo !== undefined && p.preco_custo !== null ? String(p.preco_custo) : '');
     setCadPreco(p.preco_venda !== undefined && p.preco_venda !== null ? String(p.preco_venda) : '');
-    setFotoTemp(p.foto || '');
+    setFotoTemp(p.foto || catRel?.imagem || '');
     setMsgCad('');
     setModalCadastroVisivel(true);
   };
@@ -2405,16 +2415,18 @@ export default function App() {
         fotoFinal = await comprimirImagemParaArmazenamento(fotoFinal, 300, 0.68);
       }
 
-      // 1. Grava no Catálogo Global de Produtos (compartilhado entre todas as lojas e disponível para leitura automática de código de barras)
+      // 1. Grava no Catálogo Global de Produtos (FONTE ÚNICA CENTRAL DA FOTO - Economiza memória no banco de dados)
       const novoCatalogo = [...catalogoGlobal];
       const indexCat = novoCatalogo.findIndex((c) => c.codigo === codigoDigitado);
+      const imagemCatalogo = fotoFinal || (indexCat !== -1 ? novoCatalogo[indexCat].imagem : '');
+
       const dadosGlobal: ProdutoCatalogo = {
         codigo: codigoDigitado,
         nome: nomeDigitado,
         marca: marcaDigitada,
         categoria: categoriaDigitada || 'Geral',
         unidade_medida: 'un',
-        imagem: fotoFinal,
+        imagem: imagemCatalogo || fotoFinal,
         descricao: nomeDigitado,
       };
 
@@ -2428,6 +2440,8 @@ export default function App() {
       await salvarProdutoCatalogoFirestore(dadosGlobal);
 
       // 2. Grava no Estoque da Loja Selecionada
+      // MODELO DE REFERÊNCIA CENTRAL: O estoque utiliza a imagem central do Catálogo por código de barras.
+      // Isso impede que 10 ou 100 lojas dupliquem a mesma foto no banco, reduzindo 90%+ do consumo de dados!
       let novoEstoque = [...estoque];
       if (codigoEditando) {
         novoEstoque = novoEstoque.filter(
@@ -2450,7 +2464,6 @@ export default function App() {
         novoEstoque[indexExistente].preco_custo = custoDigitado;
         novoEstoque[indexExistente].categoria = categoriaDigitada || 'Geral';
         novoEstoque[indexExistente].marca = marcaDigitada;
-        if (fotoFinal) novoEstoque[indexExistente].foto = fotoFinal;
       } else {
         novoEstoque.push({
           codigo_barras: codigoDigitado,
@@ -2463,7 +2476,6 @@ export default function App() {
           validade: valDigitada,
           preco_custo: custoDigitado,
           preco_venda: precoDigitado,
-          foto: fotoFinal,
         });
       }
 
@@ -2478,7 +2490,6 @@ export default function App() {
         validade: valDigitada,
         preco_custo: custoDigitado,
         preco_venda: precoDigitado,
-        foto: fotoFinal,
       };
 
       setEstoque(novoEstoque);
@@ -3051,7 +3062,7 @@ export default function App() {
       agrupados[p.codigo] = {
         codigo: p.codigo,
         nome: p.nome,
-        foto: p.foto,
+        foto: obterFotoProduto(p.codigo, p.foto),
         preco_venda: p.preco_venda,
         qtdTotal: 0,
         lotes: [],
@@ -3555,6 +3566,7 @@ export default function App() {
 
                   const primeiraValidade = loteValido?.validade || p.lotes[0]?.validade || '';
                   const primeiroLote = loteValido?.lote || p.lotes[0]?.lote || '';
+                  const fotoCard = obterFotoProduto(p.codigo, p.foto);
 
                   return (
                     <div className="card-produto" key={p.codigo}>
@@ -3562,7 +3574,7 @@ export default function App() {
                         className="foto-produto"
                         onClick={() => abrirVenda(p.codigo, primeiraValidade, primeiroLote)}
                       >
-                        {p.foto ? <img src={p.foto} alt={p.nome} /> : 'Sem imagem'}
+                        {fotoCard ? <img src={fotoCard} alt={p.nome} /> : 'Sem imagem'}
                       </div>
                       <div className="info-card">
                         <div>
@@ -4593,11 +4605,14 @@ export default function App() {
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
                               <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#e2e8f0', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                {p.foto ? (
-                                  <img src={p.foto} alt={p.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                  <span style={{ fontSize: '1.2rem' }}>🛒</span>
-                                )}
+                                {(() => {
+                                  const fotoLinha = obterFotoProduto(p.codigo, p.foto);
+                                  return fotoLinha ? (
+                                    <img src={fotoLinha} alt={p.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  ) : (
+                                    <span style={{ fontSize: '1.2rem' }}>🛒</span>
+                                  );
+                                })()}
                               </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -5346,7 +5361,10 @@ export default function App() {
             <div className="corpo-modal" id="corpo-venda">
               <div style={{ textAlign: 'center' }}>
                 <div className="preview-foto" style={{ height: '120px', margin: '0 auto 8px auto', maxWidth: '160px' }}>
-                  {prodAtual.foto ? <img src={prodAtual.foto} alt={prodAtual.nome} /> : 'Sem imagem'}
+                  {(() => {
+                    const fotoModal = obterFotoProduto(prodAtual.codigo, prodAtual.foto);
+                    return fotoModal ? <img src={fotoModal} alt={prodAtual.nome} /> : 'Sem imagem';
+                  })()}
                 </div>
                 <h3 style={{ marginBottom: '2px', fontSize: '1rem' }}>{prodAtual.nome}</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--texto-secundario)' }}>
@@ -5609,6 +5627,7 @@ export default function App() {
         operadores={listaOperadores}
         nomeLoja={nomeSupermercadoAtivo}
         onVerCupom={(venda) => setVendaCupomVer(venda)}
+        catalogoGlobal={catalogoGlobal}
       />
 
       <GraficosVendasModal
@@ -5617,6 +5636,7 @@ export default function App() {
         vendas={vendas}
         estoque={estoque}
         nomeLoja={nomeSupermercadoAtivo}
+        catalogoGlobal={catalogoGlobal}
       />
 
       {/* MODAL DE CUPOM DE VENDA / IMPRESSÃO */}

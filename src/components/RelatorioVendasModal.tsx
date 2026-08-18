@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Venda, ItemEstoque, OperadorCaixa } from '../types';
+import { Venda, ItemEstoque, OperadorCaixa, ProdutoCatalogo } from '../types';
 import { exportarVendasCSV } from '../lib/exportUtils';
 
 interface RelatorioVendasModalProps {
@@ -10,6 +10,7 @@ interface RelatorioVendasModalProps {
   operadores: OperadorCaixa[];
   nomeLoja: string;
   onVerCupom?: (venda: Venda) => void;
+  catalogoGlobal?: ProdutoCatalogo[];
 }
 
 export const RelatorioVendasModal: React.FC<RelatorioVendasModalProps> = ({
@@ -20,6 +21,7 @@ export const RelatorioVendasModal: React.FC<RelatorioVendasModalProps> = ({
   operadores,
   nomeLoja,
   onVerCupom,
+  catalogoGlobal = [],
 }) => {
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState<'todas' | 'concluida' | 'estornada'>('todas');
@@ -314,9 +316,12 @@ export const RelatorioVendasModal: React.FC<RelatorioVendasModalProps> = ({
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {item.foto && (
-                                <img src={item.foto} alt={item.nome} style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                              )}
+                              {(() => {
+                                const fotoItem = item.foto || catalogoGlobal.find((c) => c.codigo === item.codigo)?.imagem;
+                                return fotoItem ? (
+                                  <img src={fotoItem} alt={item.nome} style={{ width: 28, height: 28, objectFit: 'contain' }} />
+                                ) : null;
+                              })()}
                               <div>
                                 <b>{item.nome}</b>
                                 <span style={{ color: '#64748b', marginLeft: '6px' }}>

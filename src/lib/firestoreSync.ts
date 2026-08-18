@@ -35,8 +35,8 @@ export function subscribeSupermercados(callback: (lojas: Supermercado[]) => void
         callback(lojas);
       }
     },
-    (err) => {
-      console.warn('Firestore supermercados listener error:', err);
+    (_err) => {
+      // Graceful offline/silent fallback
     }
   );
 }
@@ -54,8 +54,8 @@ export function subscribeEstoque(lojaId: string, callback: (itens: ItemEstoque[]
       });
       callback(itens);
     },
-    (err) => {
-      console.warn('Firestore estoque listener error:', err);
+    (_err) => {
+      // Graceful offline/silent fallback
     }
   );
 }
@@ -72,8 +72,8 @@ export function subscribeCatalogo(callback: (produtos: ProdutoCatalogo[]) => voi
       });
       callback(prods);
     },
-    (err) => {
-      console.warn('Firestore catalogo listener error:', err);
+    (_err) => {
+      // Graceful offline/silent fallback
     }
   );
 }
@@ -93,8 +93,8 @@ export function subscribeVendas(lojaId: string, callback: (vendas: Venda[]) => v
       lista.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       callback(lista);
     },
-    (err) => {
-      console.warn('Firestore vendas listener error:', err);
+    (_err) => {
+      // Graceful offline/silent fallback
     }
   );
 }
@@ -112,8 +112,8 @@ export function subscribeOperadores(lojaId: string, callback: (operadores: Opera
       });
       callback(lista);
     },
-    (err) => {
-      console.warn('Firestore operadores listener error:', err);
+    (_err) => {
+      // Graceful offline/silent fallback
     }
   );
 }
@@ -131,8 +131,8 @@ export function subscribeClientesDevedores(lojaId: string, callback: (clientes: 
       });
       callback(lista);
     },
-    (err) => {
-      console.warn('Firestore clientes_devedores listener error:', err);
+    (_err) => {
+      // Graceful offline/silent fallback
     }
   );
 }

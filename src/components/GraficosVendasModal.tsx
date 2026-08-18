@@ -14,7 +14,7 @@ import {
   PieChart,
   Pie,
 } from 'recharts';
-import { Venda, ItemEstoque } from '../types';
+import { Venda, ItemEstoque, ProdutoCatalogo } from '../types';
 
 interface GraficosVendasModalProps {
   visivel: boolean;
@@ -22,6 +22,7 @@ interface GraficosVendasModalProps {
   vendas: Venda[];
   estoque: ItemEstoque[];
   nomeLoja: string;
+  catalogoGlobal?: ProdutoCatalogo[];
 }
 
 export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
@@ -30,6 +31,7 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
   vendas,
   estoque,
   nomeLoja,
+  catalogoGlobal = [],
 }) => {
   const [periodoGrafico, setPeriodoGrafico] = useState<'dia' | 'semana' | 'mes' | 'ano'>('mes');
   const [tipoGrafico, setTipoGrafico] = useState<'area' | 'barras'>('area');
@@ -508,12 +510,13 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
           if (!item) return;
           const cod = item.codigo || item.nome || 'SEM_CODIGO';
           if (!mapaItens[cod]) {
+            const catItem = catalogoGlobal.find((c) => c.codigo === (item.codigo || cod));
             mapaItens[cod] = {
               codigo: item.codigo || cod,
-              nome: item.nome || 'Produto sem nome',
+              nome: item.nome || catItem?.nome || 'Produto sem nome',
               qtdVendida: 0,
               totalFaturado: 0,
-              foto: item.foto,
+              foto: item.foto || catItem?.imagem,
             };
           }
           const qtd = Number(item.quantidade) || 0;
@@ -572,12 +575,13 @@ export const GraficosVendasModal: React.FC<GraficosVendasModalProps> = ({
           if (!e) return;
           const cod = e.codigo || e.nome || 'SEM_CODIGO';
           if (!estoqueAgrupado[cod]) {
+            const catItem = catalogoGlobal.find((c) => c.codigo === cod);
             estoqueAgrupado[cod] = {
               codigo: cod,
-              nome: e.nome || 'Produto',
+              nome: e.nome || catItem?.nome || 'Produto',
               qtdTotal: 0,
               precoVenda: Number(e.preco_venda) || 0,
-              foto: e.foto,
+              foto: e.foto || catItem?.imagem,
             };
           }
           estoqueAgrupado[cod].qtdTotal += Number(e.quantidade) || 0;
