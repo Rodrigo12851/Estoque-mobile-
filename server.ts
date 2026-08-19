@@ -546,6 +546,22 @@ Retorne JSON com: "nomeProduto", "marca", "categoria", "fotoUrl", "descricao".`,
       });
     }
   });
+  // Rota explícita para o Service Worker com cabeçalho Service-Worker-Allowed
+  app.get("/sw.js", (req, res) => {
+    res.setHeader("Content-Type", "application/javascript");
+    res.setHeader("Service-Worker-Allowed", "/");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    const swPath = path.join(process.cwd(), "public", "sw.js");
+    res.sendFile(swPath);
+  });
+
+  // Rota explícita para o Web App Manifest
+  app.get("/manifest.json", (req, res) => {
+    res.setHeader("Content-Type", "application/manifest+json");
+    const manifestPath = path.join(process.cwd(), "public", "manifest.json");
+    res.sendFile(manifestPath);
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
