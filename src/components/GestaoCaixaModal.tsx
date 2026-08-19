@@ -69,7 +69,14 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
 
   if (!visivel) return null;
 
-  // Totais Esperados do Caixa Ativo
+  // Filtrar estritamente apenas as vendas concluídas DESTA SESSÃO ESPECÍFICA DO OPERADOR
+  const vendasConcluidas = vendasSessao.filter((v) => {
+    if (v.status !== 'concluida') return false;
+    if (sessaoAtiva?.operadorId && v.operadorId && v.operadorId !== sessaoAtiva.operadorId) return false;
+    if (sessaoAtiva?.lojaId && v.lojaId && v.lojaId !== sessaoAtiva.lojaId) return false;
+    return true;
+  });
+
   const totalSuprimentos = movimentacoes
     .filter((m) => m.tipo === 'suprimento')
     .reduce((acc, m) => acc + m.valor, 0);
@@ -78,19 +85,23 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
     .filter((m) => m.tipo === 'sangria')
     .reduce((acc, m) => acc + m.valor, 0);
 
-  const vendasConcluidas = vendasSessao.filter((v) => v.status === 'concluida');
-
   const totalVendasDinheiro = vendasConcluidas
     .filter((v) => v.formaPagamento === 'dinheiro')
-    .reduce((acc, v) => acc + v.valorTotal, 0);
+    .reduce((acc, v) => acc + (v.valorTotal || 0), 0);
 
   const totalVendasCartao = vendasConcluidas
     .filter((v) => v.formaPagamento === 'cartao_credito' || v.formaPagamento === 'cartao_debito')
-    .reduce((acc, v) => acc + v.valorTotal, 0);
+    .reduce((acc, v) => acc + (v.valorTotal || 0), 0);
 
   const totalVendasPix = vendasConcluidas
     .filter((v) => v.formaPagamento === 'pix')
-    .reduce((acc, v) => acc + v.valorTotal, 0);
+    .reduce((acc, v) => acc + (v.valorTotal || 0), 0);
+
+  const totalVendasFiado = vendasConcluidas
+    .filter((v) => v.formaPagamento === 'fiado')
+    .reduce((acc, v) => acc + (v.valorTotal || 0), 0);
+
+  const totalFaturadoNesteTurno = totalVendasDinheiro + totalVendasCartao + totalVendasPix + totalVendasFiado;
 
   const saldoDinheiroEmEspecieEsperado =
     (sessaoAtiva?.valorInicialSuprimento || 0) + totalSuprimentos + totalVendasDinheiro - totalSangrias;
@@ -99,9 +110,9 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
     e.preventDefault();
     setMsgErroAbertura('');
     const val = parseFloat(valorInicialStr.replace(',', '.')) || 0;
-    
+
     if (!loginAbrir.trim() || !senhaAbrir.trim()) {
-      setMsgErroAbertura('Informe o usuário/CPF e a senha para abrir o caixa.');
+      setMsgErroAbertura('Informe o login/CPF e a senha para abrir o caixa.');
       return;
     }
 
@@ -110,7 +121,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
       setSenhaAbrir('');
       setMsgErroAbertura('');
     } else {
-      setMsgErroAbertura(resultado.mensagem || 'Usuário ou senha incorretos! Tente novamente.');
+      setMsgErroAbertura(resultado.mensagem || 'Usuário ou senha incorretos! Verifique suas credenciais.');
     }
   };
 
@@ -139,7 +150,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
     const pix = parseFloat(pixInfStr.replace(',', '.')) || 0;
 
     if (!loginFechar.trim() || !senhaFechar.trim()) {
-      setMsgErroFechamento('Informe seu usuário e senha para confirmar o fechamento.');
+      setMsgErroFechamento('Informe seu usuário e senha para autorizar o encerramento do caixa.');
       return;
     }
 
@@ -155,23 +166,23 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
 
   return (
     <div className="modal-overlay" style={{ zIndex: 9999 }}>
-      <div className="modal-container" style={{ maxWidth: '650px', width: '90%' }}>
+      <div className="modal-container" style={{ maxWidth: '650px', width: '92%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem' }}>
-            💵 Gestão do Turno de Caixa & Autenticação
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.15rem' }}>
+            💵 Gestão do Turno de Caixa & Prestação de Contas
           </h3>
           <button className="btn-fechar-modal" onClick={onFechar}>&times;</button>
         </div>
 
         {/* MENSAGEM SE NÃO HOUVER CAIXA ABERTO */}
         {!sessaoAtiva || sessaoAtiva.status === 'fechado' ? (
-          <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '18px', borderRadius: '12px' }}>
+          <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '20px', borderRadius: '12px' }}>
             <div style={{ textAlign: 'center', marginBottom: '16px' }}>
               <h4 style={{ color: '#0f172a', margin: '0 0 6px 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                🔑 Autenticação de Operador & Abertura de Caixa
+                🔑 Autenticação do Operador & Abertura de Caixa
               </h4>
               <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
-                Informe seu Login (CPF/Usuário) e Senha para abrir o caixa e liberar vendas na loja <strong>{loja?.nome}</strong>.
+                Informe seu Login (CPF ou Usuário) e Senha/PIN para abrir a gaveta e iniciar suas vendas no <strong>{loja?.nome}</strong>.
               </p>
             </div>
 
@@ -184,12 +195,12 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
             <form onSubmit={handleSubmeterAbertura} style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '420px', margin: '0 auto' }}>
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '4px', color: '#334155' }}>
-                  👤 Usuário / CPF / Login:
+                  👤 Login ou CPF do Operador:
                 </label>
                 <input
                   type="text"
                   className="input-padrao"
-                  placeholder="Ex: caixa01 ou supervisor"
+                  placeholder="Digite seu login cadastrado"
                   value={loginAbrir}
                   onChange={(e) => {
                     setLoginAbrir(e.target.value);
@@ -199,45 +210,16 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                   autoCapitalize="none"
                   style={{ width: '100%' }}
                 />
-
-                {listaOperadores.length > 0 && (
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Operadores cadastrados:</span>
-                    {listaOperadores.map((op) => (
-                      <button
-                        key={op.id}
-                        type="button"
-                        onClick={() => {
-                          setLoginAbrir(op.cpfOuUsuario);
-                          setMsgErroAbertura('');
-                        }}
-                        style={{
-                          background: loginAbrir === op.cpfOuUsuario ? '#0284c7' : '#e2e8f0',
-                          color: loginAbrir === op.cpfOuUsuario ? '#ffffff' : '#334155',
-                          border: 'none',
-                          borderRadius: '6px',
-                          padding: '3px 8px',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                          fontWeight: 500,
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        👤 {op.nome.split(' ')[0]} ({op.cpfOuUsuario})
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '4px', color: '#334155' }}>
-                  🔑 Senha / PIN:
+                  🔑 Senha / PIN do Caixa:
                 </label>
                 <input
                   type="password"
                   className="input-padrao"
-                  placeholder="Digite sua senha (ex: 123)"
+                  placeholder="Digite sua senha ou PIN"
                   value={senhaAbrir}
                   onChange={(e) => {
                     setSenhaAbrir(e.target.value);
@@ -250,7 +232,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
 
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '4px', color: '#334155' }}>
-                  💵 Fundo de Troco Inicial (Suprimento R$):
+                  💵 Fundo de Troco Inicial Conferido na Gaveta (R$):
                 </label>
                 <input
                   type="number"
@@ -268,7 +250,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                 className="btn btn-salvar"
                 style={{ width: '100%', padding: '12px', fontSize: '1rem', fontWeight: 700, marginTop: '6px' }}
               >
-                🔓 Autenticar & Abrir Caixa
+                🔓 Autenticar & Abrir Turno de Caixa
               </button>
             </form>
           </div>
@@ -304,7 +286,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                 style={{ flex: '1 1 120px', padding: '8px 10px', fontSize: '0.82rem', background: aba === 'status' ? undefined : '#f1f5f9', color: aba === 'status' ? undefined : '#334155' }}
                 onClick={() => setAba('status')}
               >
-                📊 Resumo do Turno
+                📊 Resumo do Meu Turno
               </button>
               <button
                 className={`btn ${aba === 'sangria_suprimento' ? 'btn-salvar' : ''}`}
@@ -322,22 +304,23 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
               </button>
             </div>
 
-            {/* ABA 1: RESUMO DO TURNO */}
+            {/* ABA 1: RESUMO DO TURNO ISOLADO DESTE OPERADOR */}
             {aba === 'status' && (
               <div>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600, display: 'block' }}>CAIXA ATIVO E ABERTO</span>
-                    <strong style={{ fontSize: '1rem', color: '#14532d' }}>{sessaoAtiva.operadorNome}</strong>
+                    <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 700, display: 'block' }}>MEU TURNO DE CAIXA ABERTO</span>
+                    <strong style={{ fontSize: '1.05rem', color: '#14532d' }}>{sessaoAtiva.operadorNome}</strong>
                     <span style={{ fontSize: '0.78rem', color: '#15803d', display: 'block' }}>Aberto às {sessaoAtiva.horaAbertura} em {sessaoAtiva.dataAbertura}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#166534' }}>Fundo Inicial:</span>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#14532d' }}>R$ {sessaoAtiva.valorInicialSuprimento.toFixed(2)}</div>
+                    <span style={{ fontSize: '0.75rem', color: '#166534' }}>Faturamento do Turno:</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#14532d' }}>R$ {totalFaturadoNesteTurno.toFixed(2)}</div>
+                    <span style={{ fontSize: '0.72rem', color: '#166534' }}>({vendasConcluidas.length} vendas realizadas)</span>
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat( auto-fit, minmax(160px, 1fr) )', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat( auto-fit, minmax(140px, 1fr) )', gap: '10px', marginBottom: '16px' }}>
                   <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.75rem', color: '#64748b' }}>💵 Dinheiro em Vendas</span>
                     <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#16a34a' }}>R$ {totalVendasDinheiro.toFixed(2)}</div>
@@ -353,23 +336,28 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                     <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0d9488' }}>R$ {totalVendasPix.toFixed(2)}</div>
                   </div>
 
-                  <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '6px', border: '1px solid #fecdd3' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#9f1239' }}>🔻 Sangrias Realizadas</span>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#e11d48' }}>- R$ {totalSangrias.toFixed(2)}</div>
+                  <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>📖 Vendas no Fiado</span>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#d97706' }}>R$ {totalVendasFiado.toFixed(2)}</div>
                   </div>
                 </div>
 
                 <div style={{ background: '#f1f5f9', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0f172a' }}>💰 Saldo em Dinheiro Esperado na Gaveta:</span>
+                  <div>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#0f172a', display: 'block' }}>💰 Saldo em Dinheiro Físico Esperado na Gaveta:</span>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                      (Fundo R$ {sessaoAtiva.valorInicialSuprimento.toFixed(2)} + Vendas Dinheiro R$ {totalVendasDinheiro.toFixed(2)} + Suprimentos R$ {totalSuprimentos.toFixed(2)} - Sangrias R$ {totalSangrias.toFixed(2)})
+                    </span>
+                  </div>
                   <span style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0284c7' }}>R$ {saldoDinheiroEmEspecieEsperado.toFixed(2)}</span>
                 </div>
 
                 {/* HISTÓRICO DE SANGRIAS E SUPRIMENTOS DO TURNO */}
-                <h4 style={{ fontSize: '0.88rem', margin: '0 0 8px 0', color: '#334155' }}>Histórico de Lançamentos do Turno:</h4>
+                <h4 style={{ fontSize: '0.88rem', margin: '0 0 8px 0', color: '#334155' }}>Histórico de Sangrias e Suprimentos do Meu Turno:</h4>
                 <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#fff' }}>
                   {movimentacoes.length === 0 ? (
                     <div style={{ padding: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
-                      Nenhuma sangria ou suprimento registrado até o momento.
+                      Nenhuma sangria ou suprimento registrado neste turno.
                     </div>
                   ) : (
                     movimentacoes.map((m) => (
@@ -458,9 +446,9 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
             {/* ABA 3: FECHAMENTO DE CAIXA COM CONFERÊNCIA CEGA + LOGIN/SENHA */}
             {aba === 'fechamento' && (
               <form onSubmit={handleSubmeterFechamento} style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ margin: '0 0 6px 0', color: '#1e293b' }}>🔒 Fechamento de Turno (Conferência Cega)</h4>
+                <h4 style={{ margin: '0 0 6px 0', color: '#1e293b' }}>🔒 Fechamento de Turno do Operador (Conferência Cega)</h4>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '16px' }}>
-                  Digite os valores contados fisicamente na gaveta e confirme seu Login e Senha para autorizar o encerramento.
+                  Digite os valores contados fisicamente na sua gaveta neste turno e confirme seu Login e Senha para autorizar o encerramento.
                 </p>
 
                 {msgErroFechamento && (
@@ -524,7 +512,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                   <textarea
                     className="input-padrao"
                     rows={2}
-                    placeholder="Alguma observação importante sobre o turno..."
+                    placeholder="Alguma observação importante sobre seu turno..."
                     value={obsFechamento}
                     onChange={(e) => setObsFechamento(e.target.value)}
                     style={{ width: '100%' }}
@@ -535,11 +523,11 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                   <h5 style={{ margin: '0 0 8px 0', fontSize: '0.85rem', color: '#0f172a' }}>🔑 Confirmação de Segurança do Operador</h5>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
                     <div>
-                      <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Usuário / CPF:</label>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>Login / CPF:</label>
                       <input
                         type="text"
                         className="input-padrao"
-                        placeholder="Seu login (ex: caixa01)"
+                        placeholder="Seu login"
                         value={loginFechar}
                         onChange={(e) => {
                           setLoginFechar(e.target.value);
@@ -554,7 +542,7 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                       <input
                         type="password"
                         className="input-padrao"
-                        placeholder="Sua senha (ex: 123)"
+                        placeholder="Sua senha"
                         value={senhaFechar}
                         onChange={(e) => {
                           setSenhaFechar(e.target.value);
@@ -582,4 +570,3 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
     </div>
   );
 };
-

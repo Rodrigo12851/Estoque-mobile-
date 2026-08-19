@@ -26,6 +26,9 @@ import { AlertasWhatsAppModal } from './components/AlertasWhatsAppModal';
 import { GestaoDevedoresModal } from './components/GestaoDevedoresModal';
 import { CentroNotificacoesModal } from './components/CentroNotificacoesModal';
 import { TelaLogin } from './components/TelaLogin';
+import { TermoConcordanciaModal } from './components/TermoConcordanciaModal';
+import { AlterarCredenciaisDonoModal } from './components/AlterarCredenciaisDonoModal';
+import { ManualUsuarioModal } from './components/ManualUsuarioModal';
 import { tocarBeepCaixa, tocarSomSucessoVenda } from './lib/soundUtils';
 import { exportarEstoqueCSV } from './lib/exportUtils';
 import { processarCodigoBarraBalanca } from './lib/balancaUtils';
@@ -33,11 +36,16 @@ import {
   obterVendasPendentesOffline,
   adicionarVendaFilaOffline,
   sincronizarVendasPendentesFirestore,
+  adicionarItemFilaOffline,
+  sincronizarFilaOfflinePrioritaria,
+  obterEstatisticasFilaOffline,
 } from './lib/offlineSync';
 import {
   SessaoCaixaTurno,
   MovimentacaoCaixa,
   LogAuditoria,
+  CredenciaisDonoApp,
+  TermoConcordanciaRegistro,
 } from './types';
 import { safeLocalStorageSet, safeLocalStorageGet } from './lib/safeStorage';
 import { comprimirImagemParaArmazenamento, calcularTamanhoImagemKB } from './lib/imageCompressor';
@@ -235,6 +243,13 @@ export default function App() {
   const [operadorAtivoId, setOperadorAtivoId] = useState<string | null>(() => {
     return localStorage.getItem('operadorAtivoId') || null;
   });
+
+  // Modals: Termo de Concordância, Credenciais do Dono & Manual do Usuário
+  const [modalTermoVisivel, setModalTermoVisivel] = useState<boolean>(false);
+  const [termoApenasLeitura, setTermoApenasLeitura] = useState<boolean>(false);
+  const [modalCredenciaisDonoVisivel, setModalCredenciaisDonoVisivel] = useState<boolean>(false);
+  const [modalManualVisivel, setModalManualVisivel] = useState<boolean>(false);
+  const [filaOfflineStats, setFilaOfflineStats] = useState(() => obterEstatisticasFilaOffline());
 
   // Operators / Cashiers List (Per Store)
   const [listaOperadores, setListaOperadores] = useState<OperadorCaixa[]>(() => {
@@ -656,24 +671,37 @@ export default function App() {
 
     window.addEventListener('storage', handleStorage);
 
-    // Online/Offline Status Listener & Auto Sync
+    // Online/Offline Status Listener & Priority Auto Sync
     const handleOnline = async () => {
       setIsOnline(true);
-      const syncCount = await sincronizarVendasPendentesFirestore();
-      if (syncCount > 0) {
-        setVendasPendentesCount(obterVendasPendentesOffline().length);
+      try {
+        const resultado = await sincronizarFilaOfflinePrioritaria();
+        const stats = obterEstatisticasFilaOffline();
+        setFilaOfflineStats(stats);
+        setVendasPendentesCount(stats.total);
+        if (resultado.sincronizados > 0) {
+          registrarLogAuditoria(
+            'Sincronização Offline Prioritária',
+            `Reconexão: ${resultado.sincronizados} registros críticos (estoque/vendas) sincronizados com o Firestore.`
+          );
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar fila prioritária offline:', err);
       }
     };
 
     const handleOffline = () => {
       setIsOnline(false);
+      setFilaOfflineStats(obterEstatisticasFilaOffline());
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
     // Check pending offline items on mount
-    setVendasPendentesCount(obterVendasPendentesOffline().length);
+    const statsIniciais = obterEstatisticasFilaOffline();
+    setFilaOfflineStats(statsIniciais);
+    setVendasPendentesCount(statsIniciais.total);
 
     return () => {
       if (syncChannel) syncChannel.close();
@@ -843,6 +871,7 @@ export default function App() {
       operadorNome: opAtivo.nome,
       dataAbertura: agora.toLocaleDateString('pt-BR'),
       horaAbertura: agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestampAbertura: agora.getTime(),
       status: 'aberto',
       valorInicialSuprimento: valorInicial,
     };
@@ -905,7 +934,7 @@ export default function App() {
 
     const agora = new Date();
 
-    // Calcular esperado em Dinheiro
+    // Calcular esperado em Dinheiro estritamente para o turno deste operador nesta loja
     const suprimentosSessao = movimentacoesCaixa
       .filter((m) => m.sessaoId === sessaoCaixaAtiva.id && m.tipo === 'suprimento')
       .reduce((a, b) => a + b.valor, 0);
@@ -915,8 +944,16 @@ export default function App() {
       .reduce((a, b) => a + b.valor, 0);
 
     const vendasDinheiroSessao = vendas
-      .filter((v) => v.status === 'concluida' && v.formaPagamento === 'dinheiro')
-      .reduce((a, b) => a + b.valorTotal, 0);
+      .filter((v) => {
+        if (v.status !== 'concluida' || v.formaPagamento !== 'dinheiro') return false;
+        if (v.lojaId && v.lojaId !== supermercadoAtual) return false;
+        if (v.operadorId && v.operadorId !== sessaoCaixaAtiva.operadorId) return false;
+        if (sessaoCaixaAtiva.timestampAbertura && v.timestamp) {
+          return v.timestamp >= sessaoCaixaAtiva.timestampAbertura;
+        }
+        return v.data === sessaoCaixaAtiva.dataAbertura;
+      })
+      .reduce((a, b) => a + (b.valorTotal || 0), 0);
 
     const dinheiroEsperado = sessaoCaixaAtiva.valorInicialSuprimento + suprimentosSessao + vendasDinheiroSessao - sangriasSessao;
     const diferencaDinheiro = dinheiroInformado - dinheiroEsperado;
@@ -926,6 +963,7 @@ export default function App() {
       status: 'fechado',
       dataFechamento: agora.toLocaleDateString('pt-BR'),
       horaFechamento: agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestampFechamento: agora.getTime(),
       valorDinheiroInformado: dinheiroInformado,
       valorCartaoInformado: cartaoInformado,
       valorPixInformado: pixInformado,
@@ -1526,6 +1564,20 @@ export default function App() {
     }
 
     setTelaLoginVisivel(false);
+
+    // Verificar se o usuário já aceitou o Termo de Concordância e Sigilo
+    const userChaveTermo =
+      sessao.tipo === 'dona_app'
+        ? 'termo_aceito_dona_master'
+        : sessao.tipo === 'admin_loja'
+        ? `termo_aceito_loja_${sessao.lojaId}`
+        : `termo_aceito_op_${sessao.operadorId}_${sessao.lojaId}`;
+
+    const termoAceito = localStorage.getItem(userChaveTermo);
+    if (!termoAceito) {
+      setTermoApenasLeitura(false);
+      setModalTermoVisivel(true);
+    }
   };
 
   const handleLogout = () => {
@@ -3407,6 +3459,57 @@ export default function App() {
               }}
             >
               🏢 Cadastrar / Gerenciar Lojas (Dona do App)
+            </div>
+          )}
+
+          {perfilAtivo === 'dona_app' && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 700, background: '#fdf4ff', color: '#9333ea', border: '1px solid #f0abfc' }}
+              onClick={() => {
+                setModalCredenciaisDonoVisivel(true);
+                fecharMenu();
+              }}
+            >
+              👑 Alterar Meu Login / Senha (Dono do App)
+            </div>
+          )}
+
+          <div
+            className="sidebar-item"
+            style={{ fontWeight: 600, background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}
+            onClick={() => {
+              setModalManualVisivel(true);
+              fecharMenu();
+            }}
+          >
+            📘 Manual de Instruções do Usuário
+          </div>
+
+          <div
+            className="sidebar-item"
+            style={{ fontWeight: 600, background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}
+            onClick={() => {
+              setTermoApenasLeitura(true);
+              setModalTermoVisivel(true);
+              fecharMenu();
+            }}
+          >
+            📜 Termo de Sigilo & Concordância
+          </div>
+
+          {vendasPendentesCount > 0 && (
+            <div
+              className="sidebar-item"
+              style={{ fontWeight: 700, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
+              onClick={async () => {
+                const res = await sincronizarFilaOfflinePrioritaria();
+                setFilaOfflineStats(obterEstatisticasFilaOffline());
+                setVendasPendentesCount(obterEstatisticasFilaOffline().total);
+                alert(`⚡ Sincronização Concluída!\n\n${res.sincronizados} registros prioritários gravados no Firestore.`);
+              }}
+            >
+              ⚡ Forçar Sincronização da Fila Offline ({vendasPendentesCount} pendentes)
             </div>
           )}
 
@@ -5664,7 +5767,15 @@ export default function App() {
           setAbaCaixaInicial('status');
         }}
         sessaoAtiva={sessaoCaixaAtiva}
-        vendasSessao={vendas}
+        vendasSessao={vendas.filter((v) => {
+          if (!sessaoCaixaAtiva) return true;
+          if (v.lojaId && v.lojaId !== supermercadoAtual) return false;
+          if (v.operadorId && v.operadorId !== sessaoCaixaAtiva.operadorId) return false;
+          if (sessaoCaixaAtiva.timestampAbertura && v.timestamp) {
+            return v.timestamp >= sessaoCaixaAtiva.timestampAbertura;
+          }
+          return v.data === sessaoCaixaAtiva.dataAbertura;
+        })}
         movimentacoes={movimentacoesCaixa}
         onAbrirCaixa={handleAbrirCaixa}
         onRegistrarMovimentacao={handleRegistrarMovimentacaoCaixa}
@@ -5695,6 +5806,64 @@ export default function App() {
         onSalvarCliente={handleSalvarClienteDevedor}
         onExcluirCliente={handleExcluirClienteDevedor}
         onRegistrarPagamento={handleRegistrarPagamentoFiado}
+      />
+
+      {/* MODAL DO TERMO DE CONCORDÂNCIA E SIGILO DO USUÁRIO */}
+      <TermoConcordanciaModal
+        visivel={modalTermoVisivel}
+        onAceitar={(registro) => {
+          const userChaveTermo =
+            perfilAtivo === 'dona_app'
+              ? 'termo_aceito_dona_master'
+              : perfilAtivo === 'admin_loja'
+              ? `termo_aceito_loja_${supermercadoAtual}`
+              : `termo_aceito_op_${operadorAtivoId}_${supermercadoAtual}`;
+
+          localStorage.setItem(userChaveTermo, JSON.stringify(registro));
+          setModalTermoVisivel(false);
+          registrarLogAuditoria(
+            'Termo de Concordância Aceito',
+            `Usuário ${registro.usuarioNome} (${registro.perfil}) aceitou o termo versão ${registro.versaoTermo} em ${registro.dataAceite}`
+          );
+        }}
+        onRecusar={() => {
+          alert('Para utilizar o sistema do supermercado, é necessário concordar com os termos de segurança e uso.');
+          setModalTermoVisivel(false);
+          handleLogout();
+        }}
+        usuarioNome={
+          perfilAtivo === 'dona_app'
+            ? 'Dono / Administrador Master do Aplicativo'
+            : perfilAtivo === 'admin_loja'
+            ? `Administrador da Loja (${nomeSupermercadoAtivo})`
+            : opAtualLogado?.nome || 'Operador de Caixa'
+        }
+        usuarioPerfil={perfilAtivo}
+        lojaNome={nomeSupermercadoAtivo}
+        apenasLeitura={termoApenasLeitura}
+      />
+
+      {/* MODAL DE ALTERAÇÃO DE LOGIN E SENHA DO DONO DO APP */}
+      <AlterarCredenciaisDonoModal
+        visivel={modalCredenciaisDonoVisivel}
+        onFechar={() => setModalCredenciaisDonoVisivel(false)}
+        onSalvarSucesso={(novasCredenciais) => {
+          registrarLogAuditoria(
+            'Credenciais Master Alteradas',
+            `Dono do App alterou login/senha master com sucesso.`
+          );
+        }}
+      />
+
+      {/* MODAL DO MANUAL DO USUÁRIO ISOLADO POR PERMISSÃO */}
+      <ManualUsuarioModal
+        visivel={modalManualVisivel}
+        onFechar={() => setModalManualVisivel(false)}
+        perfilAtivo={perfilAtivo}
+        permissoesOperador={opAtualLogado?.permissoes || PERMISSOES_CAIXA_PADRAO}
+        permissoesLoja={lojaAtualObj?.permissoesLoja || PERMISSOES_LOJA_PADRAO}
+        nomeLoja={nomeSupermercadoAtivo}
+        nomeOperador={opAtualLogado?.nome}
       />
 
       {/* TELA DE LOGIN & CONTROLE DE ACESSO */}

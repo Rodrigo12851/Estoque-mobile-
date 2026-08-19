@@ -196,16 +196,39 @@ export interface SessaoCaixaTurno {
   operadorNome: string;
   dataAbertura: string;
   horaAbertura: string;
+  timestampAbertura?: number;
   status: 'aberto' | 'fechado';
   valorInicialSuprimento: number;
   dataFechamento?: string;
   horaFechamento?: string;
+  timestampFechamento?: number;
   valorDinheiroInformado?: number;
   valorCartaoInformado?: number;
   valorPixInformado?: number;
   valorDinheiroEsperado?: number;
   diferencaDinheiro?: number; // positivo = sobra, negativo = falta
   observacoesFechamento?: string;
+}
+
+export interface CredenciaisDonoApp {
+  usuario: string;
+  senha: string;
+  nomeExibicao?: string;
+  dataAtualizacao?: string;
+}
+
+export interface TermoConcordanciaRegistro {
+  id: string;
+  usuarioId: string;
+  usuarioNome: string;
+  perfil: string;
+  lojaId?: string;
+  lojaNome?: string;
+  dataAceite: string;
+  horaAceite: string;
+  timestamp: number;
+  versaoTermo: string;
+  aceitou: boolean;
 }
 
 export interface LogAuditoria {
