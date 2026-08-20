@@ -6022,7 +6022,6 @@ export default function App() {
         visivel={telaLoginVisivel}
         listaSupermercados={listaSupermercados}
         onLoginSucesso={handleLoginSucesso}
-        onFechar={perfilAtivo ? () => setTelaLoginVisivel(false) : undefined}
       />
     </>
   );

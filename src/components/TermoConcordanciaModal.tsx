@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { TermoConcordanciaRegistro } from '../types';
 
 interface TermoConcordanciaModalProps {
   visivel: boolean;
@@ -21,20 +20,12 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
   onFechar,
 }) => {
   const [concordo, setConcordo] = useState<boolean>(false);
-  const [leuAteFim, setLeuAteFim] = useState<boolean>(false);
 
   if (!visivel) return null;
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollTop + clientHeight >= scrollHeight - 30) {
-      setLeuAteFim(true);
-    }
-  };
-
   const handleConfirmar = () => {
     if (!concordo && !apenasLeitura) {
-      alert('Para prosseguir, você deve marcar a caixa confirmando que leu e concorda com os termos de uso e segurança.');
+      alert('Por favor, marque a caixa de confirmação para aceitar o termo e continuar.');
       return;
     }
     onAceitar();
@@ -48,46 +39,57 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(15, 23, 42, 0.88)',
+        background: 'rgba(15, 23, 42, 0.92)',
         backdropFilter: 'blur(8px)',
         zIndex: 999999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
+        padding: '12px',
       }}
     >
       <div
         style={{
           background: '#ffffff',
           width: '100%',
-          maxWidth: '680px',
-          borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+          maxWidth: '560px',
+          borderRadius: '18px',
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4)',
           border: '1px solid #cbd5e1',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          maxHeight: '92vh',
+          maxHeight: '88vh',
         }}
       >
-        {/* CABEÇALHO */}
+        {/* CABEÇALHO DO TERMO */}
         <div
           style={{
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            padding: '20px 24px',
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            padding: '18px 20px',
             color: '#ffffff',
             borderBottom: '3px solid #0284c7',
-            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
           }}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.6rem' }}>📜</span>
+            <div>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, letterSpacing: '-0.01em', color: '#ffffff' }}>
+                Termo de Uso e Segurança
+              </h2>
+              <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                Normas de acesso, sigilo e boas práticas operacionais
+              </p>
+            </div>
+          </div>
           {apenasLeitura && onFechar && (
             <button
               onClick={onFechar}
               style={{
-                position: 'absolute',
-                top: '16px',
-                right: '16px',
                 background: 'rgba(255,255,255,0.15)',
                 border: 'none',
                 color: '#fff',
@@ -95,135 +97,136 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
                 height: '32px',
                 borderRadius: '50%',
                 cursor: 'pointer',
-                fontSize: '1.1rem',
+                fontSize: '1rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
               title="Fechar"
             >
               ✕
             </button>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '1.8rem' }}>📜</span>
-            <div>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, letterSpacing: '-0.01em' }}>
-                Termo de Concordância, Sigilo e Responsabilidade Operacional
-              </h2>
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-                Regulamento Oficial de Acesso, Proteção de Dados e Boas Práticas no PDV e Estoque
-              </p>
-            </div>
-          </div>
         </div>
 
-        {/* IDENTIFICAÇÃO DO USUÁRIO */}
+        {/* IDENTIFICAÇÃO SIMPLES DO USUÁRIO */}
         <div
           style={{
-            background: '#f8fafc',
-            padding: '10px 20px',
+            background: '#f1f5f9',
+            padding: '8px 16px',
             borderBottom: '1px solid #e2e8f0',
             fontSize: '0.82rem',
             color: '#334155',
             display: 'flex',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: '8px',
+            gap: '6px',
           }}
         >
           <div>
-            <strong>Usuário Conectado:</strong> {usuarioNome} ({perfilNome})
+            <strong>👤 Usuário:</strong> {usuarioNome} <span style={{ color: '#0284c7' }}>({perfilNome})</span>
           </div>
           {lojaNome && (
             <div>
-              <strong>Supermercado:</strong> {lojaNome}
+              <strong>🏢 Supermercado:</strong> {lojaNome}
             </div>
           )}
         </div>
 
-        {/* CORPO DO TERMO COM SCROLL */}
+        {/* CORPO DO TERMO RESPONSIVO E LEGÍVEL */}
         <div
-          onScroll={handleScroll}
           style={{
-            padding: '20px 24px',
+            padding: '16px 18px',
             overflowY: 'auto',
-            fontSize: '0.88rem',
-            lineHeight: 1.65,
-            color: '#334155',
+            WebkitOverflowScrolling: 'touch',
+            fontSize: '0.92rem',
+            lineHeight: 1.6,
+            color: '#1e293b',
             flex: 1,
             background: '#ffffff',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
           }}
         >
+          {/* BLOCO 1 */}
           <div
             style={{
-              background: '#f0f9ff',
-              border: '1px solid #bae6fd',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              marginBottom: '16px',
-              color: '#0369a1',
-              fontSize: '0.84rem',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '12px 14px',
             }}
           >
-            ℹ️ <strong>Aviso Obrigatório de Primeiro Acesso:</strong> Para garantir a integridade dos dados fiscais, financeiros e o controle rigoroso de estoque, todos os colaboradores e administradores devem ler e aceitar formalmente as diretrizes abaixo.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <span style={{ fontSize: '1.2rem' }}>🔒</span>
+              <strong style={{ fontSize: '0.94rem', color: '#0f172a' }}>1. Sigilo e Proteção de Dados (LGPD)</strong>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.86rem', color: '#475569' }}>
+              É proibido copiar, fotografar ou compartilhar informações confidenciais do supermercado, tais como preços de custo, margens de lucro, relatórios de faturamento, cadastros e dívidas de clientes fiado.
+            </p>
           </div>
 
-          <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '14px 0 6px 0' }}>
-            1. Confidencialidade e Proteção de Dados (LGPD)
-          </h3>
-          <p style={{ margin: '0 0 10px 0' }}>
-            O usuário compromete-se a manter total sigilo sobre todas as informações comerciais, preços de custo, margens de lucro, listas de fornecedores, cadastros e dívidas de clientes fiado a que tiver acesso durante a operação do sistema. É terminantemente vedado copiar, exportar ou compartilhar dados com terceiros sem autorização expressa da diretoria do supermercado.
-          </p>
-
-          <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '14px 0 6px 0' }}>
-            2. Pessoalidade e Intransferibilidade de Senhas e PIN
-          </h3>
-          <p style={{ margin: '0 0 10px 0' }}>
-            O Login, CPF e a Senha/PIN de acesso fornecidos ao colaborador são estritamente pessoais e intransferíveis. O usuário é o único responsável civil e administrativamente por todas as vendas, aberturas de caixa, sangrias, suprimentos e cancelamentos efetuados sob sua credencial autenticada. Nunca forneça seu código de acesso a outros colaboradores.
-          </p>
-
-          <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '14px 0 6px 0' }}>
-            3. Rigor nas Movimentações de Caixa e Estoque
-          </h3>
-          <p style={{ margin: '0 0 10px 0' }}>
-            Ao abrir o turno de caixa, o operador deve conferir presencialmente a quantia do fundo de troco inicial. Ao encerrar o turno, a conferência deve retratar fielmente a quantia em espécie, comprovantes de cartão e comprovantes PIX. Qualquer divergência, quebra de caixa ou irregularidade de estoque será registrada nos logs de auditoria e submetida à supervisão.
-          </p>
-
-          <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '14px 0 6px 0' }}>
-            4. Isolamento Seguro de Dados e Acesso Restrito
-          </h3>
-          <p style={{ margin: '0 0 10px 0' }}>
-            O sistema opera com isolamento de permissões (RBAC). O usuário concorda em utilizar exclusivamente as ferramentas liberadas para o seu cargo (Caixa, Repositor, Supervisor ou Administrador). Tentativas de burlar regras, acessar áreas administrativas não autorizadas ou manipular registros configuram falta grave.
-          </p>
-
-          <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', margin: '14px 0 6px 0' }}>
-            5. Auditoria Digital e Rastreabilidade Permanente
-          </h3>
-          <p style={{ margin: '0 0 10px 0' }}>
-            Todas as operações críticas realizadas no sistema — incluindo horários de abertura e fechamento de turno, vendas concluídas, estornos solicitados, baixas por perda/vencimento e pagamentos fiado recebidos — são automaticamente carimbadas com data, hora, ID do operador e armazenadas em banco de dados em nuvem para fins de auditoria interna.
-          </p>
-
+          {/* BLOCO 2 */}
           <div
             style={{
-              marginTop: '20px',
-              padding: '12px',
               background: '#f8fafc',
-              borderRadius: '8px',
               border: '1px solid #e2e8f0',
-              fontSize: '0.8rem',
-              color: '#64748b',
-              textAlign: 'center',
+              borderRadius: '12px',
+              padding: '12px 14px',
             }}
           >
-            Versão do Termo: <strong>2026.2-PROD</strong> | Registro Digital: <strong>{new Date().toLocaleDateString('pt-BR')}</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <span style={{ fontSize: '1.2rem' }}>🔑</span>
+              <strong style={{ fontSize: '0.94rem', color: '#0f172a' }}>2. Senha e PIN Pessoais</strong>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.86rem', color: '#475569' }}>
+              Seu login e senha são estritamente pessoais e intransferíveis. Todas as vendas, cancelamentos, aberturas e fechamentos de caixa registrados em seu nome são de sua inteira responsabilidade.
+            </p>
+          </div>
+
+          {/* BLOCO 3 */}
+          <div
+            style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '12px 14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <span style={{ fontSize: '1.2rem' }}>💵</span>
+              <strong style={{ fontSize: '0.94rem', color: '#0f172a' }}>3. Caixa e Estoque</strong>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.86rem', color: '#475569' }}>
+              O operador deve conferir o fundo de troco no início do turno e lançar a contagem exata no fechamento. Baixas de estoque por avaria ou perda devem ter motivo justificado.
+            </p>
+          </div>
+
+          {/* BLOCO 4 */}
+          <div
+            style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '12px 14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <span style={{ fontSize: '1.2rem' }}>📋</span>
+              <strong style={{ fontSize: '0.94rem', color: '#0f172a' }}>4. Auditoria Digital</strong>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.86rem', color: '#475569' }}>
+              Para segurança mútua da loja e dos colaboradores, as ações importantes (como vendas, sangrias e estornos) são registradas com data, hora e operador responsável.
+            </p>
           </div>
         </div>
 
-        {/* RODAPÉ COM CONFIRMAÇÃO */}
+        {/* RODAPÉ COM CHECKBOX E BOTÃO RESPONSIVO */}
         <div
           style={{
-            padding: '16px 24px',
+            padding: '14px 18px',
             background: '#f8fafc',
             borderTop: '1px solid #e2e8f0',
             display: 'flex',
@@ -235,23 +238,25 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
             <label
               style={{
                 display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
+                alignItems: 'center',
+                gap: '12px',
                 fontSize: '0.88rem',
-                color: '#1e293b',
+                color: '#0f172a',
                 cursor: 'pointer',
                 fontWeight: 600,
+                background: '#ffffff',
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
               }}
             >
               <input
                 type="checkbox"
                 checked={concordo}
                 onChange={(e) => setConcordo(e.target.checked)}
-                style={{ width: '18px', height: '18px', marginTop: '2px', cursor: 'pointer' }}
+                style={{ width: '20px', height: '20px', cursor: 'pointer', flexShrink: 0 }}
               />
-              <span>
-                Li atentamente, compreendi e concordo integralmente com as obrigações, normas de sigilo e responsabilidades de uso do sistema.
-              </span>
+              <span>Li e concordo com os termos de uso, sigilo e segurança.</span>
             </label>
           )}
 
@@ -264,11 +269,12 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
                   background: '#0284c7',
                   color: '#ffffff',
                   border: 'none',
-                  padding: '10px 24px',
-                  borderRadius: '8px',
+                  padding: '12px 20px',
+                  borderRadius: '10px',
                   fontWeight: 700,
-                  fontSize: '0.9rem',
+                  fontSize: '0.92rem',
                   cursor: 'pointer',
+                  width: '100%',
                 }}
               >
                 Fechar Visualização
@@ -279,20 +285,20 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
                 disabled={!concordo}
                 onClick={handleConfirmar}
                 style={{
-                  background: concordo ? '#16a34a' : '#94a3b8',
+                  background: concordo ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : '#94a3b8',
                   color: '#ffffff',
                   border: 'none',
-                  padding: '12px 28px',
-                  borderRadius: '8px',
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
+                  padding: '14px 20px',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '0.96rem',
                   cursor: concordo ? 'pointer' : 'not-allowed',
-                  boxShadow: concordo ? '0 4px 12px rgba(22, 163, 74, 0.3)' : 'none',
+                  boxShadow: concordo ? '0 4px 14px rgba(22, 163, 74, 0.35)' : 'none',
                   transition: 'all 0.2s ease',
                   width: '100%',
                 }}
               >
-                ✅ Aceitar Termo e Iniciar Sessão
+                {concordo ? '✅ Aceitar e Iniciar Sessão' : 'Marque a caixa acima para continuar'}
               </button>
             )}
           </div>
