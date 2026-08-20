@@ -41,21 +41,67 @@ export function subscribeSupermercados(callback: (lojas: Supermercado[]) => void
   );
 }
 
-// Real-time listener for Estoque
+// Real-time listener for Estoque com proteção Offline-First (nunca apaga dados locais)
 export function subscribeEstoque(lojaId: string, callback: (itens: ItemEstoque[]) => void) {
   const colRef = collection(db, 'estoque');
   const q = query(colRef, where('lojaId', '==', lojaId));
   return onSnapshot(
     q,
     (snapshot) => {
-      const itens: ItemEstoque[] = [];
+      const itensRemotos: ItemEstoque[] = [];
       snapshot.forEach((docSnap) => {
-        itens.push(docSnap.data() as ItemEstoque);
+        const data = docSnap.data() as ItemEstoque;
+        if (data && data.codigo) {
+          itensRemotos.push(data);
+        }
       });
-      callback(itens);
+
+      // Ler dados locais salvos
+      let itensLocais: ItemEstoque[] = [];
+      try {
+        const salvo = localStorage.getItem(`estoque_${lojaId}`);
+        if (salvo) itensLocais = JSON.parse(salvo);
+      } catch (e) {}
+
+      if (itensRemotos.length === 0) {
+        // Se a nuvem retornou vazio (offline ou loja recém-criada), mantém e protege os itens locais
+        if (itensLocais.length > 0) {
+          callback(itensLocais);
+        } else {
+          callback([]);
+        }
+        return;
+      }
+
+      // Mesclagem inteligente: prioriza dados remotos, preservando itens que foram criados offline
+      const mapa = new Map<string, ItemEstoque>();
+      itensRemotos.forEach((item) => {
+        const chave = `${item.codigo}_${item.validade || ''}_${item.lote || ''}`;
+        mapa.set(chave, item);
+      });
+
+      // Adiciona itens locais que ainda não subiram para a nuvem
+      itensLocais.forEach((item) => {
+        const chave = `${item.codigo}_${item.validade || ''}_${item.lote || ''}`;
+        if (!mapa.has(chave)) {
+          mapa.set(chave, item);
+        }
+      });
+
+      const listaMesclada = Array.from(mapa.values());
+      callback(listaMesclada);
     },
     (_err) => {
-      // Graceful offline/silent fallback
+      // Em caso de falha de conexão/offline, carrega do localStorage local imediatamente
+      try {
+        const salvo = localStorage.getItem(`estoque_${lojaId}`);
+        if (salvo) {
+          const itensLocais = JSON.parse(salvo);
+          if (Array.isArray(itensLocais) && itensLocais.length > 0) {
+            callback(itensLocais);
+          }
+        }
+      } catch (e) {}
     }
   );
 }
@@ -68,12 +114,26 @@ export function subscribeCatalogo(callback: (produtos: ProdutoCatalogo[]) => voi
     (snapshot) => {
       const prods: ProdutoCatalogo[] = [];
       snapshot.forEach((docSnap) => {
-        prods.push(docSnap.data() as ProdutoCatalogo);
+        const p = docSnap.data() as ProdutoCatalogo;
+        if (p && p.codigo) {
+          prods.push(p);
+        }
       });
-      callback(prods);
+
+      if (prods.length > 0) {
+        callback(prods);
+      } else {
+        try {
+          const salvo = localStorage.getItem('catalogoGlobalFirebase');
+          if (salvo) callback(JSON.parse(salvo));
+        } catch (e) {}
+      }
     },
     (_err) => {
-      // Graceful offline/silent fallback
+      try {
+        const salvo = localStorage.getItem('catalogoGlobalFirebase');
+        if (salvo) callback(JSON.parse(salvo));
+      } catch (e) {}
     }
   );
 }
@@ -85,16 +145,44 @@ export function subscribeVendas(lojaId: string, callback: (vendas: Venda[]) => v
   return onSnapshot(
     q,
     (snapshot) => {
-      const lista: Venda[] = [];
+      const listaRemota: Venda[] = [];
       snapshot.forEach((docSnap) => {
-        lista.push({ id: docSnap.id, ...docSnap.data() } as Venda);
+        const v = { id: docSnap.id, ...docSnap.data() } as Venda;
+        if (v && v.id) {
+          listaRemota.push(v);
+        }
       });
-      // Sort by timestamp desc
+
+      let listaLocal: Venda[] = [];
+      try {
+        const salvo = localStorage.getItem(`vendas_${lojaId}`);
+        if (salvo) listaLocal = JSON.parse(salvo);
+      } catch (e) {}
+
+      if (listaRemota.length === 0) {
+        if (listaLocal.length > 0) {
+          callback(listaLocal);
+        } else {
+          callback([]);
+        }
+        return;
+      }
+
+      const mapaVendas = new Map<string, Venda>();
+      listaRemota.forEach((v) => mapaVendas.set(v.id, v));
+      listaLocal.forEach((v) => {
+        if (!mapaVendas.has(v.id)) mapaVendas.set(v.id, v);
+      });
+
+      const lista = Array.from(mapaVendas.values());
       lista.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       callback(lista);
     },
     (_err) => {
-      // Graceful offline/silent fallback
+      try {
+        const salvo = localStorage.getItem(`vendas_${lojaId}`);
+        if (salvo) callback(JSON.parse(salvo));
+      } catch (e) {}
     }
   );
 }
@@ -106,14 +194,40 @@ export function subscribeOperadores(lojaId: string, callback: (operadores: Opera
   return onSnapshot(
     q,
     (snapshot) => {
-      const lista: OperadorCaixa[] = [];
+      const listaRemota: OperadorCaixa[] = [];
       snapshot.forEach((docSnap) => {
-        lista.push({ id: docSnap.id, ...docSnap.data() } as OperadorCaixa);
+        const op = { id: docSnap.id, ...docSnap.data() } as OperadorCaixa;
+        if (op && op.id) {
+          listaRemota.push(op);
+        }
       });
-      callback(lista);
+
+      let listaLocal: OperadorCaixa[] = [];
+      try {
+        const salvo = localStorage.getItem(`operadores_caixa_${lojaId}`);
+        if (salvo) listaLocal = JSON.parse(salvo);
+      } catch (e) {}
+
+      if (listaRemota.length === 0) {
+        if (listaLocal.length > 0) {
+          callback(listaLocal);
+        }
+        return;
+      }
+
+      const mapaOps = new Map<string, OperadorCaixa>();
+      listaRemota.forEach((op) => mapaOps.set(op.id, op));
+      listaLocal.forEach((op) => {
+        if (!mapaOps.has(op.id)) mapaOps.set(op.id, op);
+      });
+
+      callback(Array.from(mapaOps.values()));
     },
     (_err) => {
-      // Graceful offline/silent fallback
+      try {
+        const salvo = localStorage.getItem(`operadores_caixa_${lojaId}`);
+        if (salvo) callback(JSON.parse(salvo));
+      } catch (e) {}
     }
   );
 }
@@ -125,14 +239,40 @@ export function subscribeClientesDevedores(lojaId: string, callback: (clientes: 
   return onSnapshot(
     q,
     (snapshot) => {
-      const lista: ClienteDevedor[] = [];
+      const listaRemota: ClienteDevedor[] = [];
       snapshot.forEach((docSnap) => {
-        lista.push({ id: docSnap.id, ...docSnap.data() } as ClienteDevedor);
+        const c = { id: docSnap.id, ...docSnap.data() } as ClienteDevedor;
+        if (c && c.id) {
+          listaRemota.push(c);
+        }
       });
-      callback(lista);
+
+      let listaLocal: ClienteDevedor[] = [];
+      try {
+        const salvo = localStorage.getItem(`clientes_devedores_${lojaId}`);
+        if (salvo) listaLocal = JSON.parse(salvo);
+      } catch (e) {}
+
+      if (listaRemota.length === 0) {
+        if (listaLocal.length > 0) {
+          callback(listaLocal);
+        }
+        return;
+      }
+
+      const mapa = new Map<string, ClienteDevedor>();
+      listaRemota.forEach((c) => mapa.set(c.id, c));
+      listaLocal.forEach((c) => {
+        if (!mapa.has(c.id)) mapa.set(c.id, c);
+      });
+
+      callback(Array.from(mapa.values()));
     },
     (_err) => {
-      // Graceful offline/silent fallback
+      try {
+        const salvo = localStorage.getItem(`clientes_devedores_${lojaId}`);
+        if (salvo) callback(JSON.parse(salvo));
+      } catch (e) {}
     }
   );
 }
@@ -344,6 +484,49 @@ export async function excluirClienteDevedorFirestore(clienteId: string) {
   } catch (err) {
     console.error('Erro ao excluir cliente devedor no Firestore:', err);
   }
+}
+
+// Save Audit Log to Firestore (Append-Only / Imutável)
+export async function salvarLogAuditoriaFirestore(log: {
+  id: string;
+  lojaId: string;
+  operadorId: string;
+  operadorNome: string;
+  acao: string;
+  detalhes: string;
+  dataHora: string;
+}) {
+  try {
+    const safeId = sanitizarIdDoc(log.id || 'log_' + Date.now());
+    const docRef = doc(db, 'logs_auditoria', safeId);
+    await setDoc(docRef, {
+      ...limparUndefined(log),
+      timestamp: Date.now(),
+      createdAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Aviso ao salvar log de auditoria no Firestore:', err);
+  }
+}
+
+// Real-time listener for Audit Logs
+export function subscribeLogsAuditoria(lojaId: string, callback: (logs: any[]) => void) {
+  const colRef = collection(db, 'logs_auditoria');
+  const q = query(colRef, where('lojaId', '==', lojaId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const logs: any[] = [];
+      snapshot.forEach((docSnap) => {
+        logs.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      callback(logs);
+    },
+    (_err) => {
+      // Silent fallback
+    }
+  );
 }
 
 // Seed Initial Data into Firestore if collections are empty

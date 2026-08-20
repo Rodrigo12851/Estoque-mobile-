@@ -2,18 +2,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Funções auxiliares de validação de dados
-    function temCamposObrigatorios(campos) {
-      return request.resource.data.keys().hasAll(campos);
+    // Helper functions for data integrity and validation
+    function isNonEmptyString(val) {
+      return val is string && val.size() > 0 && val.size() < 500;
+    }
+
+    function isValidNumber(val) {
+      return val is number && val >= 0;
     }
 
     // 1. Supermercados cadastrados
     match /supermercados/{lojaId} {
       allow read: if true;
-      allow create, update: if request.resource.data.id == lojaId &&
-                               request.resource.data.nome is string &&
-                               request.resource.data.nome.size() > 0;
-      allow delete: if true;
+      allow create, update: if request.resource.data.id is string &&
+                               isNonEmptyString(request.resource.data.nome) &&
+                               request.resource.data.cnpj is string;
+      allow delete: if false; // Soft-delete recomendado para prevenir perda irreversível
     }
 
     // 2. Credenciais Master do Dono do Aplicativo
@@ -22,57 +26,84 @@ service cloud.firestore {
     }
 
     // 3. Catálogo Global de Produtos (Referência de imagens e código de barras)
-    match /catalogo_global/{codigoBarra} {
+    match /produtos_catalogo/{codigoBarra} {
       allow read: if true;
-      allow create, update: if request.resource.data.codigo is string &&
-                               request.resource.data.nome is string;
+      allow create, update: if isNonEmptyString(request.resource.data.codigo) &&
+                               isNonEmptyString(request.resource.data.nome);
       allow delete: if false; // Previne deleção acidental da base mestra de códigos
     }
 
-    // 4. Estoque por Supermercado
-    match /{path=**}/estoque_{lojaId}/{itemId} {
+    match /catalogo_global/{codigoBarra} {
       allow read: if true;
-      allow write: if request.resource.data.codigo is string &&
-                      request.resource.data.quantidade is number;
+      allow write: if isNonEmptyString(request.resource.data.codigo);
     }
 
-    // 5. Vendas por Supermercado (Imutáveis após registro)
-    match /{path=**}/vendas_{lojaId}/{vendaId} {
+    // 4. Estoque por Supermercado (Coleção unificada 'estoque' com validação estrita de tipos)
+    match /estoque/{itemId} {
       allow read: if true;
-      allow create: if request.resource.data.id is string &&
-                       request.resource.data.valorTotal is number;
+      allow create, update: if isNonEmptyString(request.resource.data.lojaId) &&
+                               isNonEmptyString(request.resource.data.codigo) &&
+                               isNonEmptyString(request.resource.data.nome) &&
+                               isValidNumber(request.resource.data.preco_venda) &&
+                               request.resource.data.quantidade is number;
+      allow delete: if true;
+    }
+
+    // 5. Vendas por Supermercado (Histórico fiscal e financeiro com proteção contra deleção)
+    match /vendas/{vendaId} {
+      allow read: if true;
+      allow create: if isNonEmptyString(request.resource.data.lojaId) &&
+                       isNonEmptyString(request.resource.data.id) &&
+                       isValidNumber(request.resource.data.valorTotal) &&
+                       request.resource.data.itens is list;
       allow update: if request.resource.data.status in ['concluida', 'estornada'];
-      allow delete: if false; // Proibido deletar histórico fiscal/contábil de vendas
+      allow delete: if false; // Proibido deletar histórico fiscal e contábil de vendas
     }
 
     // 6. Operadores e Caixas por Supermercado
-    match /{path=**}/operadores_{lojaId}/{opId} {
-      allow read, write: if true;
+    match /operadores/{opId} {
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.lojaId) &&
+                               isNonEmptyString(request.resource.data.nome) &&
+                               isNonEmptyString(request.resource.data.cpfOuUsuario) &&
+                               isNonEmptyString(request.resource.data.pinSenha) &&
+                               request.resource.data.ativo is bool;
+      allow delete: if true;
     }
 
     // 7. Clientes Devedores (Caderneta Fiado) por Loja
-    match /{path=**}/clientes_devedores_{lojaId}/{clienteId} {
-      allow read, write: if true;
+    match /clientes_devedores/{clienteId} {
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.lojaId) &&
+                               isNonEmptyString(request.resource.data.nome);
+      allow delete: if true;
     }
 
-    // 8. Termos de Concordância e Sigilo do Usuário
+    // 8. Termos de Concordância e Sigilo do Usuário (Imutável)
     match /termos_concordancia/{termoId} {
       allow read: if true;
-      allow create: if request.resource.data.usuarioId is string &&
+      allow create: if isNonEmptyString(request.resource.data.usuarioId) &&
                        request.resource.data.aceitou == true;
       allow update, delete: if false; // Termo aceito é inviolável e permanente
     }
 
-    // 9. Logs de Auditoria do Sistema
+    // 9. Logs de Auditoria do Sistema (Append-only / Imutável)
     match /logs_auditoria/{logId} {
       allow read: if true;
-      allow create: if request.resource.data.acao is string;
-      allow update, delete: if false; // Logs são estritamente append-only
+      allow create: if isNonEmptyString(request.resource.data.acao) &&
+                       request.resource.data.lojaId is string;
+      allow update, delete: if false; // Logs são estritamente append-only para conformidade
     }
 
-    // Fallback de segurança para demais coleções
+    // 10. Sessões Ativas por Usuário (Prevenção de login simultâneo em múltiplos aparelhos)
+    match /sessoes_ativas/{userKey} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Bloqueio padrão para todas as outras coleções não mapeadas (Princípio do Menor Privilégio)
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

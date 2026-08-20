@@ -93,6 +93,19 @@ export interface SessaoUsuario {
   operadorId?: string;
   operadorNome?: string;
   operadorCargo?: string;
+  sessaoToken?: string;
+  userKey?: string;
+}
+
+export interface SessaoAtivaDoc {
+  userKey: string;
+  sessaoToken: string;
+  tipo: 'dona_app' | 'admin_loja' | 'caixa';
+  usuarioNome: string;
+  lojaId?: string;
+  operadorId?: string;
+  dataLogin: string;
+  dispositivoInfo?: string;
 }
 
 export interface VendaItem {

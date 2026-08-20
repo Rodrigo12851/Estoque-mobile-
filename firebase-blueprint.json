@@ -68,6 +68,19 @@
         "ativo": { "type": "boolean", "description": "Status ativo/inativo", "required": true },
         "dataCadastro": { "type": "string", "description": "Data de cadastro", "required": false }
       }
+    },
+    "sessoes_ativas": {
+      "description": "Controle de sessão única ativa por usuário/dispositivo para evitar login simultâneo em dois aparelhos",
+      "fields": {
+        "userKey": { "type": "string", "description": "Chave identificadora única do usuário/operador", "required": true },
+        "sessaoToken": { "type": "string", "description": "Token único da sessão ativa gerado no login", "required": true },
+        "tipo": { "type": "string", "description": "dona_app, admin_loja ou caixa", "required": true },
+        "usuarioNome": { "type": "string", "description": "Nome do usuário conectado", "required": true },
+        "lojaId": { "type": "string", "description": "ID do supermercado", "required": false },
+        "operadorId": { "type": "string", "description": "ID do operador", "required": false },
+        "dataLogin": { "type": "string", "description": "Data e hora do login ISO", "required": true },
+        "dispositivoInfo": { "type": "string", "description": "Informações do dispositivo ou navegador", "required": false }
+      }
     }
   }
 }

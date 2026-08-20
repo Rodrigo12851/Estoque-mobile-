@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Supermercado, OperadorCaixa, SessaoUsuario, CredenciaisDonoApp } from '../types';
 
 interface TelaLoginProps {
@@ -16,54 +16,56 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
   onFechar,
   senhaMasterPadrao = 'adminmaster',
 }) => {
-  const [tipoLogin, setTipoLogin] = useState<'caixa' | 'admin_loja' | 'dona_app'>('caixa');
-
-  // Master State (Dono do App)
-  const [usuarioMaster, setUsuarioMaster] = useState('');
-  const [senhaMaster, setSenhaMaster] = useState('');
-  const [erroMaster, setErroMaster] = useState('');
-
-  // Store Admin State (Supermercado)
-  const [lojaSelecionadaId, setLojaSelecionadaId] = useState(
-    listaSupermercados.length > 0 ? listaSupermercados[0].id : ''
+  const [lojaSelecionadaId, setLojaSelecionadaId] = useState<string>(
+    listaSupermercados.length > 0 ? listaSupermercados[0].id : 'loja_matriz_01'
   );
-  const [senhaLoja, setSenhaLoja] = useState('');
-  const [erroLoja, setErroLoja] = useState('');
+  const [usuarioOuCpf, setUsuarioOuCpf] = useState<string>('');
+  const [senhaOuPin, setSenhaOuPin] = useState<string>('');
+  const [senhaVisivel, setSenhaVisivel] = useState<boolean>(false);
+  const [erro, setErro] = useState<string>('');
+  const [carregando, setCarregando] = useState<boolean>(false);
 
-  // Cashier / Employee State (Operador / Funcionário)
-  const [lojaCaixaId, setLojaCaixaId] = useState(
-    listaSupermercados.length > 0 ? listaSupermercados[0].id : ''
-  );
-  const [usuarioCpf, setUsuarioCpf] = useState('');
-  const [pinSenhaCaixa, setPinSenhaCaixa] = useState('');
-  const [erroCaixa, setErroCaixa] = useState('');
-
-  React.useEffect(() => {
+  useEffect(() => {
     if (listaSupermercados.length > 0) {
       if (!lojaSelecionadaId || !listaSupermercados.some((l) => l.id === lojaSelecionadaId)) {
         setLojaSelecionadaId(listaSupermercados[0].id);
       }
-      if (!lojaCaixaId || !listaSupermercados.some((l) => l.id === lojaCaixaId)) {
-        setLojaCaixaId(listaSupermercados[0].id);
-      }
     }
-  }, [listaSupermercados, lojaSelecionadaId, lojaCaixaId]);
+  }, [listaSupermercados, lojaSelecionadaId]);
 
   if (!visivel) return null;
 
-  const handleLoginDono = (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setErroMaster('');
+    setErro('');
+    setCarregando(true);
 
+    const userDigitado = usuarioOuCpf.trim();
+    const userDigitadoLower = userDigitado.toLowerCase();
+    const passDigitada = senhaOuPin.trim();
+
+    if (!userDigitado) {
+      setErro('Por favor, informe seu usuário, CPF ou login.');
+      setCarregando(false);
+      return;
+    }
+
+    if (!passDigitada) {
+      setErro('Por favor, digite sua senha ou PIN.');
+      setCarregando(false);
+      return;
+    }
+
+    // 1. VERIFICAÇÃO 1: Dono do Aplicativo (Master Admin)
     let credenciaisMaster: CredenciaisDonoApp = {
       usuario: 'adminmaster',
       senha: senhaMasterPadrao,
     };
 
-    const salvo = localStorage.getItem('credenciais_dono_app');
-    if (salvo) {
+    const salvoMaster = localStorage.getItem('credenciais_dono_app');
+    if (salvoMaster) {
       try {
-        const parsed = JSON.parse(salvo);
+        const parsed = JSON.parse(salvoMaster);
         if (parsed && typeof parsed === 'object') {
           if (parsed.usuario) credenciaisMaster.usuario = parsed.usuario;
           if (parsed.senha) credenciaisMaster.senha = parsed.senha;
@@ -77,142 +79,126 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
       if (usuarioLegado) credenciaisMaster.usuario = usuarioLegado;
     }
 
-    const usuarioDigitado = usuarioMaster.trim().toLowerCase();
-    const senhaDigitada = senhaMaster.trim();
+    const masterUserEsperado = (credenciaisMaster.usuario || 'adminmaster').toLowerCase();
+    const masterPassEsperada = credenciaisMaster.senha || senhaMasterPadrao;
 
-    const usuarioEsperado = (credenciaisMaster.usuario || 'adminmaster').toLowerCase();
-    const senhaEsperada = credenciaisMaster.senha || senhaMasterPadrao;
+    const isMasterUser =
+      userDigitadoLower === masterUserEsperado ||
+      userDigitadoLower === 'adminmaster' ||
+      userDigitadoLower === 'dona' ||
+      (userDigitadoLower === 'admin' && (passDigitada === masterPassEsperada || passDigitada === 'adminmaster'));
 
-    const usuarioValido =
-      usuarioDigitado === usuarioEsperado ||
-      usuarioDigitado === 'adminmaster' ||
-      usuarioDigitado === 'dona' ||
-      usuarioDigitado === 'admin';
+    const isMasterPass =
+      passDigitada === masterPassEsperada ||
+      passDigitada === 'adminmaster' ||
+      passDigitada === 'admin';
 
-    const senhaValida =
-      senhaDigitada === senhaEsperada ||
-      senhaDigitada === 'adminmaster' ||
-      senhaDigitada === 'admin';
-
-    if (usuarioValido && senhaValida) {
+    if (isMasterUser && isMasterPass) {
+      setCarregando(false);
       onLoginSucesso({
         tipo: 'dona_app',
       });
-    } else {
-      setErroMaster('Usuário ou Senha Master incorretos! Verifique suas credenciais de Dono do App.');
-    }
-  };
-
-  const handleLoginLoja = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErroLoja('');
-
-    const loja = listaSupermercados.find((l) => l.id === lojaSelecionadaId);
-    if (!loja) {
-      setErroLoja('Supermercado não encontrado!');
       return;
     }
 
-    if (loja.status === 'bloqueado') {
-      setErroLoja(
-        `🛑 ACESSO SUSPENSO: O supermercado "${loja.nome}" foi bloqueado pela Dona do Aplicativo. Motivo: ${
-          loja.motivoBloqueio || 'Entre em contato com a administração geral para regularizar o acesso.'
-        }`
-      );
-      return;
-    }
+    // 2. VERIFICAÇÃO 2: Administrador da Loja / Supermercado
+    const lojaAtual = listaSupermercados.find((l) => l.id === lojaSelecionadaId) || listaSupermercados[0];
+    
+    // Procura se o login digitado corresponde à loja ou se é 'admin'/'gerente' da loja
+    const isStoreAdminUser =
+      userDigitadoLower === 'admin' ||
+      userDigitadoLower === 'gerente' ||
+      userDigitadoLower === (lojaAtual?.nome || '').toLowerCase() ||
+      userDigitadoLower === (lojaAtual?.cnpj || '').replace(/\D/g, '') ||
+      userDigitadoLower === lojaAtual?.id.toLowerCase();
 
-    const senhaDigitada = senhaLoja.trim();
-    const senhaEsperada = loja.senha || 'admin';
+    const storePassEsperada = lojaAtual?.senha || 'admin';
+    const isStorePass = passDigitada === storePassEsperada || passDigitada === 'admin';
 
-    if (senhaDigitada === senhaEsperada || senhaDigitada === 'admin') {
+    if (isStoreAdminUser && isStorePass && lojaAtual) {
+      if (lojaAtual.status === 'bloqueado') {
+        setCarregando(false);
+        setErro(
+          `🛑 ACESSO SUSPENSO: O supermercado "${lojaAtual.nome}" foi bloqueado pelo Dono do Aplicativo. Motivo: ${
+            lojaAtual.motivoBloqueio || 'Entre em contato com a administração geral.'
+          }`
+        );
+        return;
+      }
+
+      setCarregando(false);
       onLoginSucesso({
         tipo: 'admin_loja',
-        lojaId: loja.id,
-        lojaNome: loja.nome,
+        lojaId: lojaAtual.id,
+        lojaNome: lojaAtual.nome,
       });
-    } else {
-      setErroLoja('Senha administrativa do supermercado incorreta!');
-    }
-  };
-
-  const handleLoginCaixa = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErroCaixa('');
-
-    const loja = listaSupermercados.find((l) => l.id === lojaCaixaId);
-    if (!loja) {
-      setErroCaixa('Supermercado não selecionado!');
       return;
     }
 
-    if (loja.status === 'bloqueado') {
-      setErroCaixa(
-        `🛑 ACESSO SUSPENSO: O supermercado "${loja.nome}" está temporariamente bloqueado pela Dona do Aplicativo. Acesso negado a toda a equipe.`
-      );
-      return;
-    }
+    // 3. VERIFICAÇÃO 3: Operador de Caixa / Funcionário
+    if (lojaAtual) {
+      if (lojaAtual.status === 'bloqueado') {
+        setCarregando(false);
+        setErro(`🛑 ACESSO SUSPENSO: O supermercado "${lojaAtual.nome}" está temporariamente bloqueado.`);
+        return;
+      }
 
-    // Carregar operadores salvos para esta loja
-    const salvo = localStorage.getItem(`operadores_caixa_${loja.id}`);
-    let operadores: OperadorCaixa[] = [];
-    if (salvo) {
-      try {
-        operadores = JSON.parse(salvo);
-      } catch (e) {}
-    }
+      const salvoOps = localStorage.getItem(`operadores_caixa_${lojaAtual.id}`);
+      let operadores: OperadorCaixa[] = [];
+      if (salvoOps) {
+        try {
+          operadores = JSON.parse(salvoOps);
+        } catch (e) {}
+      }
 
-    if (operadores.length === 0) {
-      // Se ainda não tiver operadores cadastrados nesta loja nova, permitir operador padrão inicial
-      if (usuarioCpf.trim().toLowerCase() === 'caixa01' || usuarioCpf.trim() === '123') {
+      // Se for operador padrão inicial para teste/configuração
+      if (operadores.length === 0 && (userDigitadoLower === 'caixa01' || userDigitado === '123') && (passDigitada === '123' || passDigitada === '1234')) {
+        setCarregando(false);
         onLoginSucesso({
           tipo: 'caixa',
-          lojaId: loja.id,
-          lojaNome: loja.nome,
+          lojaId: lojaAtual.id,
+          lojaNome: lojaAtual.nome,
           operadorId: 'op_padrao_01',
           operadorNome: 'Operador de Caixa Padrão',
           operadorCargo: 'Operador de Caixa',
         });
         return;
       }
-    }
 
-    const opEncontrado = operadores.find(
-      (o) =>
-        o.cpfOuUsuario.trim().toLowerCase() === usuarioCpf.trim().toLowerCase() ||
-        o.nome.trim().toLowerCase() === usuarioCpf.trim().toLowerCase()
-    );
-
-    if (!opEncontrado) {
-      setErroCaixa(
-        `Funcionário "${usuarioCpf}" não encontrado no cadastro do ${loja.nome}. Solicite seu cadastro ao Administrador da Loja.`
+      // Busca operador pelo CPF, usuário ou nome
+      const opEncontrado = operadores.find(
+        (o) =>
+          o.cpfOuUsuario.trim().toLowerCase() === userDigitadoLower ||
+          o.nome.trim().toLowerCase() === userDigitadoLower ||
+          o.cpfOuUsuario.replace(/\D/g, '') === userDigitado.replace(/\D/g, '')
       );
-      return;
+
+      if (opEncontrado) {
+        if (opEncontrado.ativo === false) {
+          setCarregando(false);
+          setErro(`🛑 ACESSO BLOQUEADO: O usuário "${opEncontrado.nome}" está desativado no cadastro.`);
+          return;
+        }
+
+        const pinEsperado = opEncontrado.pinSenha || '1234';
+        if (passDigitada === pinEsperado || passDigitada === '123' || passDigitada === '1234') {
+          setCarregando(false);
+          onLoginSucesso({
+            tipo: 'caixa',
+            lojaId: lojaAtual.id,
+            lojaNome: lojaAtual.nome,
+            operadorId: opEncontrado.id,
+            operadorNome: opEncontrado.nome,
+            operadorCargo: opEncontrado.cargo,
+          });
+          return;
+        }
+      }
     }
 
-    if (opEncontrado.ativo === false) {
-      setErroCaixa(
-        `🛑 ACESSO BLOQUEADO: Seu usuário (${opEncontrado.nome}) foi desativado pelo Administrador do Supermercado.`
-      );
-      return;
-    }
-
-    const pinDigitado = pinSenhaCaixa.trim();
-    const pinEsperado = opEncontrado.pinSenha || '1234';
-
-    if (pinDigitado !== pinEsperado && pinDigitado !== '123' && pinDigitado !== '1234') {
-      setErroCaixa('Senha / PIN incorreto para este operador!');
-      return;
-    }
-
-    onLoginSucesso({
-      tipo: 'caixa',
-      lojaId: loja.id,
-      lojaNome: loja.nome,
-      operadorId: opEncontrado.id,
-      operadorNome: opEncontrado.nome,
-      operadorCargo: opEncontrado.cargo,
-    });
+    // 4. Se chegou até aqui, nenhuma credencial conferiu
+    setCarregando(false);
+    setErro('Login ou senha incorretos. Verifique suas informações e tente novamente.');
   };
 
   return (
@@ -236,21 +222,20 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
         style={{
           background: '#ffffff',
           width: '100%',
-          maxWidth: '460px',
+          maxWidth: '420px',
           borderRadius: '16px',
           boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
           border: '1px solid #cbd5e1',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          maxHeight: '94vh',
         }}
       >
-        {/* CABEÇALHO DO LOGIN */}
+        {/* CABEÇALHO DIRETO E LIMPO */}
         <div
           style={{
             background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-            padding: '22px 24px',
+            padding: '24px 20px',
             color: '#ffffff',
             textAlign: 'center',
             position: 'relative',
@@ -280,371 +265,154 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
               ✕
             </button>
           )}
-          <div style={{ fontSize: '2.2rem', marginBottom: '6px' }}>🔐</div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
+          <div style={{ fontSize: '2.4rem', marginBottom: '8px' }}>🔐</div>
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
             Acesso ao Sistema
           </h2>
-          <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0', opacity: 0.9 }}>
-            Informe seu login e senha para acessar seu perfil de trabalho
+          <p style={{ fontSize: '0.86rem', margin: '6px 0 0 0', opacity: 0.9 }}>
+            Digite seu login e senha para entrar no seu supermercado
           </p>
         </div>
 
-        {/* ABAS DE SELEÇÃO DE PERFIL */}
-        <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid #e2e8f0',
-            background: '#f8fafc',
-          }}
-        >
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              padding: '12px 6px',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              border: 'none',
-              borderBottom: tipoLogin === 'caixa' ? '3px solid #0284c7' : '3px solid transparent',
-              background: tipoLogin === 'caixa' ? '#ffffff' : 'transparent',
-              color: tipoLogin === 'caixa' ? '#0284c7' : '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '2px',
-              transition: 'all 0.2s ease',
-            }}
-            onClick={() => setTipoLogin('caixa')}
-          >
-            <span style={{ fontSize: '1.1rem' }}>🛒</span>
-            <span>Funcionário</span>
-          </button>
-
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              padding: '12px 6px',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              border: 'none',
-              borderBottom: tipoLogin === 'admin_loja' ? '3px solid #16a34a' : '3px solid transparent',
-              background: tipoLogin === 'admin_loja' ? '#ffffff' : 'transparent',
-              color: tipoLogin === 'admin_loja' ? '#16a34a' : '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '2px',
-              transition: 'all 0.2s ease',
-            }}
-            onClick={() => setTipoLogin('admin_loja')}
-          >
-            <span style={{ fontSize: '1.1rem' }}>🏢</span>
-            <span>Supermercado</span>
-          </button>
-
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              padding: '12px 6px',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              border: 'none',
-              borderBottom: tipoLogin === 'dona_app' ? '3px solid #9333ea' : '3px solid transparent',
-              background: tipoLogin === 'dona_app' ? '#ffffff' : 'transparent',
-              color: tipoLogin === 'dona_app' ? '#9333ea' : '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '2px',
-              transition: 'all 0.2s ease',
-            }}
-            onClick={() => setTipoLogin('dona_app')}
-          >
-            <span style={{ fontSize: '1.1rem' }}>👑</span>
-            <span>Dono do App</span>
-          </button>
-        </div>
-
-        {/* CORPO DO FORMULÁRIO DE LOGIN (PRODUÇÃO SEM TEST CREDENTIAL SHORTCUTS) */}
-        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-          {/* MODO 1: LOGIN DE FUNCIONÁRIO / CAIXA */}
-          {tipoLogin === 'caixa' && (
-            <form onSubmit={handleLoginCaixa} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Supermercado / Loja
-                </label>
-                <select
-                  value={lojaCaixaId}
-                  onChange={(e) => setLojaCaixaId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
-                    background: '#ffffff',
-                  }}
-                  required
-                >
-                  {listaSupermercados.map((loja) => (
-                    <option key={loja.id} value={loja.id}>
-                      {loja.nome} {loja.status === 'bloqueado' ? '🚫 [BLOQUEADO]' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Login ou CPF do Funcionário
-                </label>
-                <input
-                  type="text"
-                  placeholder="Digite seu login ou CPF cadastrado"
-                  value={usuarioCpf}
-                  onChange={(e) => setUsuarioCpf(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
-                    boxSizing: 'border-box',
-                  }}
-                  required
-                  autoCapitalize="none"
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Senha / PIN de Acesso
-                </label>
-                <input
-                  type="password"
-                  placeholder="Digite sua senha ou PIN"
-                  value={pinSenhaCaixa}
-                  onChange={(e) => setPinSenhaCaixa(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
-                    boxSizing: 'border-box',
-                  }}
-                  required
-                />
-              </div>
-
-              {erroCaixa && (
-                <div
-                  style={{
-                    background: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    color: '#dc2626',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    fontSize: '0.84rem',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  ⚠️ {erroCaixa}
-                </div>
-              )}
-
-              <button
-                type="submit"
+        {/* FORMULÁRIO ÚNICO E INTELIGENTE SEM ABAS */}
+        <div style={{ padding: '24px' }}>
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* SELEÇÃO DO SUPERMERCADO */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                🏢 Supermercado / Filial
+              </label>
+              <select
+                value={lojaSelecionadaId}
+                onChange={(e) => setLojaSelecionadaId(e.target.value)}
                 style={{
-                  background: '#0284c7',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '13px',
-                  borderRadius: '8px',
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 10px rgba(2, 132, 199, 0.3)',
-                  marginTop: '6px',
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.94rem',
+                  background: '#f8fafc',
+                  color: '#0f172a',
+                  fontWeight: 600,
+                  outline: 'none',
                 }}
               >
-                Entrar no Caixa / PDV
-              </button>
-            </form>
-          )}
+                {listaSupermercados.map((loja) => (
+                  <option key={loja.id} value={loja.id}>
+                    {loja.nome} {loja.status === 'bloqueado' ? '🚫 [BLOQUEADO]' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {/* MODO 2: LOGIN DO SUPERMERCADO / ADMIN LOJA */}
-          {tipoLogin === 'admin_loja' && (
-            <form onSubmit={handleLoginLoja} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Supermercado / Filial
-                </label>
-                <select
-                  value={lojaSelecionadaId}
-                  onChange={(e) => setLojaSelecionadaId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
-                    background: '#ffffff',
-                  }}
-                  required
-                >
-                  {listaSupermercados.map((loja) => (
-                    <option key={loja.id} value={loja.id}>
-                      {loja.nome} ({loja.cnpj || 'CNPJ não informado'}) {loja.status === 'bloqueado' ? '🚫 [BLOQUEADO]' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* USUÁRIO / CPF */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                👤 Usuário, CPF ou Login
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: adminmaster, CPF ou seu usuário"
+                value={usuarioOuCpf}
+                onChange={(e) => setUsuarioOuCpf(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.95rem',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                }}
+                required
+                autoCapitalize="none"
+                autoFocus
+              />
+            </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Senha Administrativa da Loja
-                </label>
+            {/* SENHA OU PIN */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                🔑 Senha ou PIN de Acesso
+              </label>
+              <div style={{ position: 'relative' }}>
                 <input
-                  type="password"
-                  placeholder="Digite a senha de administrador"
-                  value={senhaLoja}
-                  onChange={(e) => setSenhaLoja(e.target.value)}
+                  type={senhaVisivel ? 'text' : 'password'}
+                  placeholder="Digite sua senha de acesso"
+                  value={senhaOuPin}
+                  onChange={(e) => setSenhaOuPin(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
+                    padding: '12px 42px 12px 14px',
+                    borderRadius: '10px',
                     border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
+                    fontSize: '0.95rem',
                     boxSizing: 'border-box',
+                    outline: 'none',
                   }}
                   required
                 />
-              </div>
-
-              {erroLoja && (
-                <div
+                <button
+                  type="button"
+                  onClick={() => setSenhaVisivel(!senhaVisivel)}
                   style={{
-                    background: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    color: '#dc2626',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    fontSize: '0.84rem',
-                    lineHeight: 1.4,
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '1.1rem',
+                    color: '#64748b',
+                    padding: '4px',
                   }}
+                  title={senhaVisivel ? 'Ocultar senha' : 'Ver senha'}
                 >
-                  ⚠️ {erroLoja}
-                </div>
-              )}
+                  {senhaVisivel ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
 
-              <button
-                type="submit"
+            {/* MENSAGEM DE ERRO */}
+            {erro && (
+              <div
                 style={{
-                  background: '#16a34a',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '13px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#dc2626',
+                  padding: '10px 14px',
                   borderRadius: '8px',
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 10px rgba(22, 163, 74, 0.3)',
-                  marginTop: '6px',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.4,
+                  fontWeight: 500,
                 }}
               >
-                Acessar Painel do Supermercado
-              </button>
-            </form>
-          )}
-
-          {/* MODO 3: LOGIN DA DONA DO APP (SUPER ADMIN) */}
-          {tipoLogin === 'dona_app' && (
-            <form onSubmit={handleLoginDono} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Login do Dono do App
-                </label>
-                <input
-                  type="text"
-                  placeholder="Digite seu login master"
-                  value={usuarioMaster}
-                  onChange={(e) => setUsuarioMaster(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
-                    boxSizing: 'border-box',
-                  }}
-                  required
-                  autoCapitalize="none"
-                />
+                ⚠️ {erro}
               </div>
+            )}
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Senha Master
-                </label>
-                <input
-                  type="password"
-                  placeholder="Digite a Senha Master"
-                  value={senhaMaster}
-                  onChange={(e) => setSenhaMaster(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.92rem',
-                    boxSizing: 'border-box',
-                  }}
-                  required
-                />
-              </div>
-
-              {erroMaster && (
-                <div
-                  style={{
-                    background: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    color: '#dc2626',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    fontSize: '0.84rem',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  ⚠️ {erroMaster}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                style={{
-                  background: '#9333ea',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '13px',
-                  borderRadius: '8px',
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 10px rgba(147, 51, 234, 0.3)',
-                  marginTop: '6px',
-                }}
-              >
-                Acessar como Dono do Aplicativo
-              </button>
-            </form>
-          )}
+            {/* BOTÃO DE SUBMIT */}
+            <button
+              type="submit"
+              disabled={carregando}
+              style={{
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '14px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '1rem',
+                cursor: carregando ? 'wait' : 'pointer',
+                boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+                marginTop: '6px',
+                transition: 'transform 0.1s ease',
+              }}
+            >
+              {carregando ? 'Validando Acesso...' : 'Entrar no Sistema'}
+            </button>
+          </form>
         </div>
       </div>
     </div>

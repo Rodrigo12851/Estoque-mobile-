@@ -73,7 +73,16 @@ import {
   inicializarDadosIniciaisFirestore,
   migrarTodosCadastrosParaNovoBanco,
   migrarDiretamenteDoBancoAntigoParaNovo,
+  salvarLogAuditoriaFirestore,
+  subscribeLogsAuditoria,
 } from './lib/firestoreSync';
+import {
+  gerarSessaoToken,
+  obterUserKey,
+  registrarSessaoAtivaNoFirestore,
+  monitorarSessaoUnicaDispositivo,
+  encerrarSessaoAtivaNoFirestore,
+} from './lib/sessionManager';
 
 const LISTA_CATEGORIAS = [
   'Mercearia / Grãos & Cereais',
@@ -243,6 +252,10 @@ export default function App() {
   const [operadorAtivoId, setOperadorAtivoId] = useState<string | null>(() => {
     return localStorage.getItem('operadorAtivoId') || null;
   });
+  const [sessaoTokenAtivo, setSessaoTokenAtivo] = useState<string>(() => {
+    return localStorage.getItem('sessao_ativa_token') || '';
+  });
+  const [avisoDesconectadoMultiAparelho, setAvisoDesconectadoMultiAparelho] = useState<string | null>(null);
 
   // Modals: Termo de Concordância, Credenciais do Dono & Manual do Usuário
   const [modalTermoVisivel, setModalTermoVisivel] = useState<boolean>(false);
@@ -619,28 +632,71 @@ export default function App() {
   useEffect(() => {
     if (!supermercadoAtual) return;
 
-    // Subscribe to Estoque for active store
+    // Subscribe to Estoque for active store (com proteção para modo offline)
     const unsubEstoque = subscribeEstoque(supermercadoAtual, (itens) => {
-      setEstoque(itens);
-      safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(itens));
+      if (itens && itens.length > 0) {
+        setEstoque(itens);
+        safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(itens));
+      } else {
+        // Se a nuvem retornou vazio, verifica se há estoque salvo localmente antes de alterar
+        const salvo = localStorage.getItem(`estoque_${supermercadoAtual}`);
+        if (salvo) {
+          try {
+            const parsed = JSON.parse(salvo);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setEstoque(parsed);
+              return;
+            }
+          } catch (e) {}
+        }
+        setEstoque([]);
+        safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify([]));
+      }
     });
 
     // Subscribe to Vendas for active store
     const unsubVendas = subscribeVendas(supermercadoAtual, (listaVendas) => {
-      setVendas(listaVendas);
-      safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify(listaVendas));
+      if (listaVendas && listaVendas.length > 0) {
+        setVendas(listaVendas);
+        safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify(listaVendas));
+      } else {
+        const salvo = localStorage.getItem(`vendas_${supermercadoAtual}`);
+        if (salvo) {
+          try {
+            const parsed = JSON.parse(salvo);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setVendas(parsed);
+              return;
+            }
+          } catch (e) {}
+        }
+        setVendas([]);
+        safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify([]));
+      }
     });
 
     // Subscribe to Operadores for active store
     const unsubOperadores = subscribeOperadores(supermercadoAtual, (ops) => {
-      setListaOperadores(ops);
-      safeLocalStorageSet(`operadores_caixa_${supermercadoAtual}`, JSON.stringify(ops));
+      if (ops && ops.length > 0) {
+        setListaOperadores(ops);
+        safeLocalStorageSet(`operadores_caixa_${supermercadoAtual}`, JSON.stringify(ops));
+      }
     });
 
     // Subscribe to Clientes Devedores for active store
     const unsubDevedores = subscribeClientesDevedores(supermercadoAtual, (clientes) => {
-      setClientesDevedores(clientes);
-      safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(clientes));
+      if (clientes && clientes.length > 0) {
+        setClientesDevedores(clientes);
+        safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(clientes));
+      }
+    });
+
+    // Subscribe to Logs de Auditoria for active store
+    const unsubLogs = subscribeLogsAuditoria(supermercadoAtual, (logsRemotos) => {
+      if (logsRemotos && logsRemotos.length > 0) {
+        setLogsAuditoria(logsRemotos);
+        safeLocalStorageSet(`logs_auditoria_${supermercadoAtual}`, JSON.stringify(logsRemotos));
+      }
     });
 
     return () => {
@@ -648,6 +704,7 @@ export default function App() {
       unsubVendas();
       unsubOperadores();
       unsubDevedores();
+      unsubLogs();
     };
   }, [supermercadoAtual]);
 
@@ -787,6 +844,40 @@ export default function App() {
     };
   }, []);
 
+  // Monitoramento de Sessão Única por Aparelho (Desconecta automaticamente se a conta for aberta em outro dispositivo)
+  useEffect(() => {
+    if (!perfilAtivo) return;
+
+    let token = sessaoTokenAtivo || localStorage.getItem('sessao_ativa_token');
+    if (!token) {
+      token = gerarSessaoToken();
+      setSessaoTokenAtivo(token);
+      localStorage.setItem('sessao_ativa_token', token);
+    }
+
+    const sessaoAtual: Partial<SessaoUsuario> = {
+      tipo: perfilAtivo,
+      lojaId: supermercadoAtual,
+      operadorId: operadorAtivoId || undefined,
+    };
+    const userKey = obterUserKey(sessaoAtual);
+
+    const unsub = monitorarSessaoUnicaDispositivo(userKey, token, (motivo) => {
+      console.warn('Alerta de concorrência de sessão recebido:', motivo);
+      setAvisoDesconectadoMultiAparelho(motivo);
+      setPerfilAtivo(null as any);
+      setOperadorAtivoId(null);
+      localStorage.removeItem('perfilAtivoTipo');
+      localStorage.removeItem('operadorAtivoId');
+      localStorage.removeItem('sessao_ativa_token');
+      setTelaLoginVisivel(true);
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [perfilAtivo, supermercadoAtual, operadorAtivoId, sessaoTokenAtivo]);
+
   // Auditoria Handler
   const registrarLogAuditoria = (acao: string, detalhes: string) => {
     const opAtivo = listaOperadores.find((op) => op.id === operadorAtivoId);
@@ -803,6 +894,9 @@ export default function App() {
     const novaLista = [novoLog, ...logsAuditoria];
     setLogsAuditoria(novaLista);
     localStorage.setItem(`logs_auditoria_${supermercadoAtual}`, JSON.stringify(novaLista));
+
+    // Persiste no Firestore em coleção append-only imutável para auditoria e conformidade
+    salvarLogAuditoriaFirestore(novoLog);
   };
 
   // Funções de Validação de Credenciais do Operador
@@ -1534,7 +1628,11 @@ export default function App() {
   };
 
   // Login & Session Management
-  const handleLoginSucesso = (sessao: SessaoUsuario) => {
+  const handleLoginSucesso = async (sessao: SessaoUsuario) => {
+    const novoToken = gerarSessaoToken();
+    setSessaoTokenAtivo(novoToken);
+    setAvisoDesconectadoMultiAparelho(null);
+
     setPerfilAtivo(sessao.tipo);
     localStorage.setItem('perfilAtivoTipo', sessao.tipo);
 
@@ -1563,6 +1661,9 @@ export default function App() {
       localStorage.removeItem('operadorAtivoId');
     }
 
+    // Registra sessão ativa no Firestore - Isso invalida e desloga imediatamente qualquer outro aparelho que estava nesta mesma conta
+    await registrarSessaoAtivaNoFirestore(sessao, novoToken);
+
     setTelaLoginVisivel(false);
 
     // Verificar se o usuário já aceitou o Termo de Concordância e Sigilo
@@ -1580,7 +1681,7 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Se for operador de caixa e o turno ainda estiver aberto, bloquear a saída e exigir o fechamento do caixa
     if (perfilAtivo === 'caixa' && sessaoCaixaAtiva && sessaoCaixaAtiva.status === 'aberto') {
       alert(
@@ -1592,6 +1693,18 @@ export default function App() {
       setModalCaixaVisivel(true);
       return;
     }
+
+    const sessaoAtual: Partial<SessaoUsuario> = {
+      tipo: perfilAtivo,
+      lojaId: supermercadoAtual,
+      operadorId: operadorAtivoId || undefined,
+    };
+    const userKey = obterUserKey(sessaoAtual);
+    const token = sessaoTokenAtivo || localStorage.getItem('sessao_ativa_token') || '';
+    if (userKey && token) {
+      encerrarSessaoAtivaNoFirestore(userKey, token);
+    }
+
     setMotivoCaixaObrigatorio(null);
     setTelaLoginVisivel(true);
   };
@@ -5716,6 +5829,44 @@ export default function App() {
               onClick={() => setAvisoRestrito(null)}
             >
               Entendido
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* POPUP DE SESSÃO ENCERRADA POR LOGIN EM OUTRO DISPOSITIVO */}
+      <div className="modal" style={{ display: avisoDesconectadoMultiAparelho ? 'flex' : 'none', zIndex: 999999 }}>
+        <div className="modal-conteudo" style={{ maxWidth: '440px', borderTop: '6px solid #f59e0b', borderRadius: '16px' }}>
+          <div className="cab-modal" style={{ background: '#fffbeb', color: '#92400e', borderBottom: '1px solid #fef3c7' }}>
+            📱 Desconectado por Login em Outro Aparelho
+          </div>
+          <div className="corpo-modal" style={{ textAlign: 'center', padding: '24px 20px' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '12px' }}>📲</div>
+            <h3 style={{ fontSize: '1.15rem', color: '#0f172a', margin: '0 0 10px 0', fontWeight: 800 }}>
+              Sessão Conectada em Outro Aparelho
+            </h3>
+            <p style={{ fontSize: '0.9rem', color: '#475569', lineHeight: 1.5, marginBottom: '22px' }}>
+              {avisoDesconectadoMultiAparelho}
+            </p>
+            <button
+              className="btn"
+              style={{
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#fff',
+                width: '100%',
+                padding: '12px',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                setAvisoDesconectadoMultiAparelho(null);
+                setTelaLoginVisivel(true);
+              }}
+            >
+              Fazer Login Novamente
             </button>
           </div>
         </div>
