@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
+import { TermoConcordanciaRegistro } from '../types';
 
 interface TermoConcordanciaModalProps {
   visivel: boolean;
-  onAceitar: () => void;
+  onAceitar: (registro: TermoConcordanciaRegistro) => void;
+  onRecusar?: () => void;
   usuarioNome: string;
-  perfilNome: string;
+  usuarioPerfil?: string;
+  perfilNome?: string;
+  lojaId?: string;
   lojaNome?: string;
   apenasLeitura?: boolean;
   onFechar?: () => void;
@@ -13,8 +17,11 @@ interface TermoConcordanciaModalProps {
 export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
   visivel,
   onAceitar,
+  onRecusar,
   usuarioNome,
+  usuarioPerfil,
   perfilNome,
+  lojaId,
   lojaNome,
   apenasLeitura = false,
   onFechar,
@@ -23,12 +30,36 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
 
   if (!visivel) return null;
 
+  const nomeExibicaoPerfil =
+    perfilNome ||
+    (usuarioPerfil === 'dona_app'
+      ? 'Proprietário(a) Master'
+      : usuarioPerfil === 'admin_loja'
+      ? 'Administrador da Loja'
+      : 'Operador de Caixa');
+
   const handleConfirmar = () => {
     if (!concordo && !apenasLeitura) {
       alert('Por favor, marque a caixa de confirmação para aceitar o termo e continuar.');
       return;
     }
-    onAceitar();
+
+    const agora = new Date();
+    const registro: TermoConcordanciaRegistro = {
+      id: `termo_aceite_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      usuarioId: usuarioPerfil || 'usuario',
+      usuarioNome: usuarioNome || 'Usuário do Sistema',
+      perfil: nomeExibicaoPerfil,
+      lojaId: lojaId,
+      lojaNome: lojaNome,
+      dataAceite: agora.toLocaleDateString('pt-BR'),
+      horaAceite: agora.toLocaleTimeString('pt-BR'),
+      timestamp: agora.getTime(),
+      versaoTermo: '2026.2-PROD',
+      aceitou: true,
+    };
+
+    onAceitar(registro);
   };
 
   return (
@@ -125,7 +156,7 @@ export const TermoConcordanciaModal: React.FC<TermoConcordanciaModalProps> = ({
           }}
         >
           <div>
-            <strong>👤 Usuário:</strong> {usuarioNome} <span style={{ color: '#0284c7' }}>({perfilNome})</span>
+            <strong>👤 Usuário:</strong> {usuarioNome} <span style={{ color: '#0284c7' }}>({nomeExibicaoPerfil})</span>
           </div>
           {lojaNome && (
             <div>

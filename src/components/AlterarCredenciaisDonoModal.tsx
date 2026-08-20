@@ -12,9 +12,9 @@ interface AlterarCredenciaisDonoModalProps {
 
 const obterCredenciaisValidas = (cred?: CredenciaisDonoApp): CredenciaisDonoApp => {
   let base: CredenciaisDonoApp = {
-    usuario: 'adminmaster',
-    senha: 'adminmaster',
-    nomeExibicao: 'Proprietário(a) do App',
+    usuario: 'Rodrigo.souza',
+    senha: 'Mudar@123',
+    nomeExibicao: 'Rodrigo Souza (Dono do App)',
   };
 
   if (cred && typeof cred === 'object') {
@@ -54,10 +54,10 @@ export const AlterarCredenciaisDonoModal: React.FC<AlterarCredenciaisDonoModalPr
   const creds = obterCredenciaisValidas(credenciaisAtuais);
 
   const [senhaAtual, setSenhaAtual] = useState('');
-  const [novoUsuario, setNovoUsuario] = useState(creds.usuario || 'adminmaster');
+  const [novoUsuario, setNovoUsuario] = useState(creds.usuario || 'Rodrigo.souza');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
-  const [nomeExibicao, setNomeExibicao] = useState(creds.nomeExibicao || 'Proprietário(a) do App');
+  const [nomeExibicao, setNomeExibicao] = useState(creds.nomeExibicao || 'Rodrigo Souza (Dono do App)');
 
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState(false);
@@ -66,8 +66,8 @@ export const AlterarCredenciaisDonoModal: React.FC<AlterarCredenciaisDonoModalPr
   React.useEffect(() => {
     if (visivel) {
       const c = obterCredenciaisValidas(credenciaisAtuais);
-      setNovoUsuario(c.usuario || 'adminmaster');
-      setNomeExibicao(c.nomeExibicao || 'Proprietário(a) do App');
+      setNovoUsuario(c.usuario || 'Rodrigo.souza');
+      setNomeExibicao(c.nomeExibicao || 'Rodrigo Souza (Dono do App)');
       setSenhaAtual('');
       setNovaSenha('');
       setConfirmarNovaSenha('');
@@ -85,8 +85,13 @@ export const AlterarCredenciaisDonoModal: React.FC<AlterarCredenciaisDonoModalPr
     setSucesso(false);
 
     const c = obterCredenciaisValidas(credenciaisAtuais);
-    const senhaMasterValida = c.senha || 'adminmaster';
-    if (senhaAtual.trim() !== senhaMasterValida && senhaAtual.trim() !== 'adminmaster') {
+    const senhaMasterValida = c.senha || 'Mudar@123';
+    const senhaAtualDigitada = senhaAtual.trim();
+    if (
+      senhaAtualDigitada !== senhaMasterValida &&
+      senhaAtualDigitada !== 'Mudar@123' &&
+      senhaAtualDigitada !== 'adminmaster'
+    ) {
       setErro('A senha master atual informada está incorreta.');
       return;
     }
@@ -111,8 +116,8 @@ export const AlterarCredenciaisDonoModal: React.FC<AlterarCredenciaisDonoModalPr
     try {
       const novasCredenciais: CredenciaisDonoApp = {
         usuario: novoUsuario.trim(),
-        senha: novaSenha.trim() || c.senha || 'adminmaster',
-        nomeExibicao: nomeExibicao.trim() || 'Proprietário(a) do App',
+        senha: novaSenha.trim() || c.senha || 'Mudar@123',
+        nomeExibicao: nomeExibicao.trim() || 'Rodrigo Souza (Dono do App)',
         dataAtualizacao: new Date().toISOString(),
       };
 

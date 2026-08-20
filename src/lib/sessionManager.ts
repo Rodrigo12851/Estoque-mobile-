@@ -11,7 +11,8 @@ export function gerarSessaoToken(): string {
 }
 
 // Gera a chave única de identificação da conta
-export function obterUserKey(sessao: Partial<SessaoUsuario>): string {
+export function obterUserKey(sessao?: Partial<SessaoUsuario>): string {
+  if (!sessao) return 'user_anonimo';
   if (sessao.tipo === 'dona_app') {
     return 'user_master';
   }
@@ -26,6 +27,7 @@ export function obterUserKey(sessao: Partial<SessaoUsuario>): string {
 
 // Registra a nova sessão ativa no Firestore e desautoriza sessões anteriores deste mesmo usuário
 export async function registrarSessaoAtivaNoFirestore(sessao: SessaoUsuario, sessaoToken: string): Promise<void> {
+  if (!sessao) return;
   const userKey = sessao.userKey || obterUserKey(sessao);
   
   // Salva localmente o token

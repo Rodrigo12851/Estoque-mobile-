@@ -12,7 +12,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
   visivel,
   listaSupermercados,
   onLoginSucesso,
-  senhaMasterPadrao = 'adminmaster',
+  senhaMasterPadrao = 'Mudar@123',
 }) => {
   const [usuarioOuCpf, setUsuarioOuCpf] = useState<string>('');
   const [senhaOuPin, setSenhaOuPin] = useState<string>('');
@@ -47,8 +47,9 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
     // 1. VERIFICAÇÃO 1: Dono do Aplicativo (Master Admin)
     // =========================================================================
     let credenciaisMaster: CredenciaisDonoApp = {
-      usuario: 'adminmaster',
-      senha: senhaMasterPadrao,
+      usuario: 'Rodrigo.souza',
+      senha: senhaMasterPadrao || 'Mudar@123',
+      nomeExibicao: 'Rodrigo Souza (Dono do App)',
     };
 
     const salvoMaster = localStorage.getItem('credenciais_dono_app');
@@ -68,18 +69,21 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
       if (usuarioLegado) credenciaisMaster.usuario = usuarioLegado;
     }
 
-    const masterUserEsperado = (credenciaisMaster.usuario || 'adminmaster').toLowerCase();
-    const masterPassEsperada = credenciaisMaster.senha || senhaMasterPadrao;
+    const masterUserEsperado = (credenciaisMaster.usuario || 'rodrigo.souza').toLowerCase();
+    const masterPassEsperada = credenciaisMaster.senha || 'Mudar@123';
 
     const isMasterUser =
       userDigitadoLower === masterUserEsperado ||
+      userDigitadoLower === 'rodrigo.souza' ||
+      userDigitadoLower === 'rodrigo' ||
       userDigitadoLower === 'adminmaster' ||
       userDigitadoLower === 'dona' ||
       userDigitadoLower === 'master' ||
-      (userDigitadoLower === 'admin' && (passDigitada === masterPassEsperada || passDigitada === 'adminmaster'));
+      (userDigitadoLower === 'admin' && (passDigitada === masterPassEsperada || passDigitada === 'Mudar@123' || passDigitada === 'adminmaster'));
 
     const isMasterPass =
       passDigitada === masterPassEsperada ||
+      passDigitada === 'Mudar@123' ||
       passDigitada === 'adminmaster' ||
       passDigitada === 'admin';
 

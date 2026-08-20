@@ -5970,11 +5970,25 @@ export default function App() {
               ? `termo_aceito_loja_${supermercadoAtual}`
               : `termo_aceito_op_${operadorAtivoId}_${supermercadoAtual}`;
 
-          localStorage.setItem(userChaveTermo, JSON.stringify(registro));
+          const nomeUsuarioValido =
+            registro?.usuarioNome ||
+            (perfilAtivo === 'dona_app'
+              ? 'Dono / Administrador Master do Aplicativo'
+              : perfilAtivo === 'admin_loja'
+              ? `Administrador da Loja (${nomeSupermercadoAtivo})`
+              : opAtualLogado?.nome || 'Operador de Caixa');
+
+          const perfilValido = registro?.perfil || perfilAtivo || 'caixa';
+          const versaoValida = registro?.versaoTermo || '2026.2-PROD';
+          const dataValida = registro?.dataAceite || new Date().toLocaleDateString('pt-BR');
+
+          if (registro) {
+            localStorage.setItem(userChaveTermo, JSON.stringify(registro));
+          }
           setModalTermoVisivel(false);
           registrarLogAuditoria(
             'Termo de Concordância Aceito',
-            `Usuário ${registro.usuarioNome} (${registro.perfil}) aceitou o termo versão ${registro.versaoTermo} em ${registro.dataAceite}`
+            `Usuário ${nomeUsuarioValido} (${perfilValido}) aceitou o termo versão ${versaoValida} em ${dataValida}`
           );
         }}
         onRecusar={() => {
@@ -5990,6 +6004,14 @@ export default function App() {
             : opAtualLogado?.nome || 'Operador de Caixa'
         }
         usuarioPerfil={perfilAtivo}
+        perfilNome={
+          perfilAtivo === 'dona_app'
+            ? 'Proprietário(a) Master'
+            : perfilAtivo === 'admin_loja'
+            ? 'Administrador da Loja'
+            : opAtualLogado?.cargo || 'Operador de Caixa'
+        }
+        lojaId={supermercadoAtual}
         lojaNome={nomeSupermercadoAtivo}
         apenasLeitura={termoApenasLeitura}
       />
