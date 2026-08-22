@@ -215,11 +215,23 @@ export interface SessaoCaixaTurno {
   dataFechamento?: string;
   horaFechamento?: string;
   timestampFechamento?: number;
+  // Valores informados pelo operador na conferência cega
   valorDinheiroInformado?: number;
   valorCartaoInformado?: number;
   valorPixInformado?: number;
+  valorTotalInformado?: number;
+  // Valores calculados pelo sistema
   valorDinheiroEsperado?: number;
+  valorCartaoEsperado?: number;
+  valorPixEsperado?: number;
+  valorFiadoEsperado?: number;
+  valorTotalVendasTurno?: number;
+  valorTotalEsperadoGeral?: number; // Fundo + Suprimentos - Sangrias + Todas as Vendas (Dinheiro + Cartão + Pix)
+  // Balanço e divergências
   diferencaDinheiro?: number; // positivo = sobra, negativo = falta
+  diferencaCartao?: number;
+  diferencaPix?: number;
+  diferencaTotalGeral?: number;
   observacoesFechamento?: string;
 }
 

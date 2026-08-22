@@ -457,10 +457,10 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '16px' }}>
                   <div>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                      💵 Dinheiro na Gaveta (R$):
+                    <label style={{ fontSize: '0.8rem', fontWeight: 700, display: 'block', marginBottom: '4px', color: '#1e293b' }}>
+                      💵 Dinheiro Físico na Gaveta (R$):
                     </label>
                     <input
                       type="number"
@@ -472,10 +472,13 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                       required
                       style={{ width: '100%' }}
                     />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                      (Fundo inicial + vendas em dinheiro)
+                    </span>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 700, display: 'block', marginBottom: '4px', color: '#1e293b' }}>
                       💳 Comprovantes Cartão (R$):
                     </label>
                     <input
@@ -487,10 +490,13 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                       onChange={(e) => setCartaoInfStr(e.target.value)}
                       style={{ width: '100%' }}
                     />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                      (Total maquininhas débito/crédito)
+                    </span>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 700, display: 'block', marginBottom: '4px', color: '#1e293b' }}>
                       ⚡ Total PIX do Turno (R$):
                     </label>
                     <input
@@ -502,6 +508,35 @@ export const GestaoCaixaModal: React.FC<GestaoCaixaModalProps> = ({
                       onChange={(e) => setPixInfStr(e.target.value)}
                       style={{ width: '100%' }}
                     />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                      (Extrato/comprovantes PIX)
+                    </span>
+                  </div>
+                </div>
+
+                {/* SOMATÓRIO TOTAL INFORMADO EM TEMPO REAL */}
+                <div
+                  style={{
+                    background: '#f1f5f9',
+                    border: '1.5px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    marginBottom: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a' }}>
+                      📊 Total Geral Informado (Prestação de Contas):
+                    </span>
+                    <strong style={{ fontSize: '1.15rem', color: '#0284c7' }}>
+                      R$ {((parseFloat(dinheiroInfStr.replace(',', '.')) || 0) + (parseFloat(cartaoInfStr.replace(',', '.')) || 0) + (parseFloat(pixInfStr.replace(',', '.')) || 0)).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Soma: Dinheiro R$ {(parseFloat(dinheiroInfStr.replace(',', '.')) || 0).toFixed(2)} + Cartão R$ {(parseFloat(cartaoInfStr.replace(',', '.')) || 0).toFixed(2)} + PIX R$ {(parseFloat(pixInfStr.replace(',', '.')) || 0).toFixed(2)}
                   </div>
                 </div>
 

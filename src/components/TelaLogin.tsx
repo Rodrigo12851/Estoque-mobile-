@@ -20,6 +20,17 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
   const [erro, setErro] = useState<string>('');
   const [carregando, setCarregando] = useState<boolean>(false);
 
+  // Garante que toda vez que a tela de login for exibida (ex: após logout ou recarregar deslogado), os campos fiquem 100% limpos
+  React.useEffect(() => {
+    if (visivel) {
+      setUsuarioOuCpf('');
+      setSenhaOuPin('');
+      setSenhaVisivel(false);
+      setErro('');
+      setCarregando(false);
+    }
+  }, [visivel]);
+
   if (!visivel) return null;
 
   const handleLogin = (e: React.FormEvent) => {
@@ -307,6 +318,8 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
               </label>
               <input
                 type="text"
+                name="username_login_input"
+                autoComplete="off"
                 placeholder="Digite seu login, CPF ou usuário"
                 value={usuarioOuCpf}
                 onChange={(e) => setUsuarioOuCpf(e.target.value)}
@@ -347,6 +360,8 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
               <div style={{ position: 'relative' }}>
                 <input
                   type={senhaVisivel ? 'text' : 'password'}
+                  name="password_login_input"
+                  autoComplete="new-password"
                   placeholder="Digite sua senha ou PIN"
                   value={senhaOuPin}
                   onChange={(e) => setSenhaOuPin(e.target.value)}

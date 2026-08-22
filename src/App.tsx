@@ -244,15 +244,25 @@ export default function App() {
   const [senhaVisivel, setSenhaVisivel] = useState<boolean>(false);
   const [msgRegLoja, setMsgRegLoja] = useState<React.ReactNode>('');
 
-  // Active User Profile & Session State
-  const [telaLoginVisivel, setTelaLoginVisivel] = useState<boolean>(false);
+  // Active User Profile & Session State (Sessão persistida apenas se autenticada explicitamente)
+  const [telaLoginVisivel, setTelaLoginVisivel] = useState<boolean>(() => {
+    const isAutenticado = localStorage.getItem('usuario_autenticado') === 'true';
+    const perfilSalvo = localStorage.getItem('perfilAtivoTipo');
+    return !isAutenticado || !perfilSalvo;
+  });
   const [perfilAtivo, setPerfilAtivo] = useState<'dona_app' | 'admin_loja' | 'caixa'>(() => {
+    const isAutenticado = localStorage.getItem('usuario_autenticado') === 'true';
+    if (!isAutenticado) return 'dona_app';
     return (localStorage.getItem('perfilAtivoTipo') as any) || 'dona_app';
   });
   const [operadorAtivoId, setOperadorAtivoId] = useState<string | null>(() => {
+    const isAutenticado = localStorage.getItem('usuario_autenticado') === 'true';
+    if (!isAutenticado) return null;
     return localStorage.getItem('operadorAtivoId') || null;
   });
   const [sessaoTokenAtivo, setSessaoTokenAtivo] = useState<string>(() => {
+    const isAutenticado = localStorage.getItem('usuario_autenticado') === 'true';
+    if (!isAutenticado) return '';
     return localStorage.getItem('sessao_ativa_token') || '';
   });
   const [avisoDesconectadoMultiAparelho, setAvisoDesconectadoMultiAparelho] = useState<string | null>(null);
@@ -1028,7 +1038,7 @@ export default function App() {
 
     const agora = new Date();
 
-    // Calcular esperado em Dinheiro estritamente para o turno deste operador nesta loja
+    // Suprimentos e Sangrias deste turno
     const suprimentosSessao = movimentacoesCaixa
       .filter((m) => m.sessaoId === sessaoCaixaAtiva.id && m.tipo === 'suprimento')
       .reduce((a, b) => a + b.valor, 0);
@@ -1037,20 +1047,51 @@ export default function App() {
       .filter((m) => m.sessaoId === sessaoCaixaAtiva.id && m.tipo === 'sangria')
       .reduce((a, b) => a + b.valor, 0);
 
-    const vendasDinheiroSessao = vendas
-      .filter((v) => {
-        if (v.status !== 'concluida' || v.formaPagamento !== 'dinheiro') return false;
-        if (v.lojaId && v.lojaId !== supermercadoAtual) return false;
-        if (v.operadorId && v.operadorId !== sessaoCaixaAtiva.operadorId) return false;
-        if (sessaoCaixaAtiva.timestampAbertura && v.timestamp) {
-          return v.timestamp >= sessaoCaixaAtiva.timestampAbertura;
-        }
-        return v.data === sessaoCaixaAtiva.dataAbertura;
-      })
+    // Filtra todas as vendas concluídas do turno deste operador nesta loja
+    const vendasTurnoSessao = vendas.filter((v) => {
+      if (v.status !== 'concluida') return false;
+      if (v.lojaId && v.lojaId !== supermercadoAtual) return false;
+      if (v.operadorId && v.operadorId !== sessaoCaixaAtiva.operadorId) return false;
+      if (sessaoCaixaAtiva.timestampAbertura && v.timestamp) {
+        return v.timestamp >= sessaoCaixaAtiva.timestampAbertura;
+      }
+      return v.data === sessaoCaixaAtiva.dataAbertura;
+    });
+
+    // Vendas por modalidade de pagamento
+    const vendasDinheiroSessao = vendasTurnoSessao
+      .filter((v) => v.formaPagamento === 'dinheiro')
       .reduce((a, b) => a + (b.valorTotal || 0), 0);
 
+    const vendasPixSessao = vendasTurnoSessao
+      .filter((v) => v.formaPagamento === 'pix')
+      .reduce((a, b) => a + (b.valorTotal || 0), 0);
+
+    const vendasCartaoSessao = vendasTurnoSessao
+      .filter((v) => v.formaPagamento === 'cartao_credito' || v.formaPagamento === 'cartao_debito')
+      .reduce((a, b) => a + (b.valorTotal || 0), 0);
+
+    const vendasFiadoSessao = vendasTurnoSessao
+      .filter((v) => v.formaPagamento === 'fiado')
+      .reduce((a, b) => a + (b.valorTotal || 0), 0);
+
+    const valorTotalVendasTurno = vendasDinheiroSessao + vendasPixSessao + vendasCartaoSessao + vendasFiadoSessao;
+
+    // Cálculo dos valores esperados por modalidade
+    // 1. Dinheiro físico esperado na gaveta = Fundo inicial + Suprimentos + Vendas em Dinheiro - Sangrias
     const dinheiroEsperado = sessaoCaixaAtiva.valorInicialSuprimento + suprimentosSessao + vendasDinheiroSessao - sangriasSessao;
-    const diferencaDinheiro = dinheiroInformado - dinheiroEsperado;
+    const cartaoEsperado = vendasCartaoSessao;
+    const pixEsperado = vendasPixSessao;
+
+    // Total Geral Esperado (Dinheiro na gaveta + Cartão + Pix)
+    const totalEsperadoGeral = dinheiroEsperado + cartaoEsperado + pixEsperado;
+    const totalInformadoGeral = (dinheiroInformado || 0) + (cartaoInformado || 0) + (pixInformado || 0);
+
+    // Diferenças
+    const diferencaDinheiro = (dinheiroInformado || 0) - dinheiroEsperado;
+    const diferencaCartao = (cartaoInformado || 0) - cartaoEsperado;
+    const diferencaPix = (pixInformado || 0) - pixEsperado;
+    const diferencaTotalGeral = totalInformadoGeral - totalEsperadoGeral;
 
     const sessaoFechada: SessaoCaixaTurno = {
       ...sessaoCaixaAtiva,
@@ -1061,23 +1102,60 @@ export default function App() {
       valorDinheiroInformado: dinheiroInformado,
       valorCartaoInformado: cartaoInformado,
       valorPixInformado: pixInformado,
+      valorTotalInformado: totalInformadoGeral,
       valorDinheiroEsperado: dinheiroEsperado,
+      valorCartaoEsperado: cartaoEsperado,
+      valorPixEsperado: pixEsperado,
+      valorFiadoEsperado: vendasFiadoSessao,
+      valorTotalVendasTurno: valorTotalVendasTurno,
+      valorTotalEsperadoGeral: totalEsperadoGeral,
       diferencaDinheiro: diferencaDinheiro,
+      diferencaCartao: diferencaCartao,
+      diferencaPix: diferencaPix,
+      diferencaTotalGeral: diferencaTotalGeral,
       observacoesFechamento: obs,
     };
 
     setSessaoCaixaAtiva(sessaoFechada);
     localStorage.setItem(`sessao_caixa_${supermercadoAtual}_${operadorAtivoId || 'op_padrao'}`, JSON.stringify(sessaoFechada));
 
-    const statusDiff = diferencaDinheiro === 0 ? 'SEM DIFERENÇA' : diferencaDinheiro > 0 ? `SOBRA DE R$ ${diferencaDinheiro.toFixed(2)}` : `FALTA DE R$ ${Math.abs(diferencaDinheiro).toFixed(2)}`;
+    const formataDiff = (diff: number) => {
+      if (Math.abs(diff) < 0.01) return 'SEM DIFERENÇA';
+      return diff > 0 ? `SOBRA DE R$ ${diff.toFixed(2)}` : `FALTA DE R$ ${Math.abs(diff).toFixed(2)}`;
+    };
+
+    const statusDiffDinheiro = formataDiff(diferencaDinheiro);
+    const statusDiffPix = formataDiff(diferencaPix);
+    const statusDiffCartao = formataDiff(diferencaCartao);
+    const statusDiffGeral = formataDiff(diferencaTotalGeral);
 
     registrarLogAuditoria(
       'Fechamento de Caixa',
-      `Fechamento autorizadop por ${validacao.operador.nome}. Esperado Dinheiro: R$ ${dinheiroEsperado.toFixed(2)}, Informado: R$ ${dinheiroInformado.toFixed(2)} (${statusDiff})`
+      `Fechamento autorizado por ${validacao.operador.nome}. ` +
+      `Total Esperado: R$ ${totalEsperadoGeral.toFixed(2)} (Dinheiro Gaveta: R$ ${dinheiroEsperado.toFixed(2)}, PIX: R$ ${pixEsperado.toFixed(2)}, Cartão: R$ ${cartaoEsperado.toFixed(2)}), ` +
+      `Total Informado: R$ ${totalInformadoGeral.toFixed(2)} (${statusDiffGeral})`
     );
 
     tocarSomSucessoVenda();
-    alert(`🔒 Caixa FECHADO com sucesso!\n\nConfirmado por: ${validacao.operador.nome}\nEsperado: R$ ${dinheiroEsperado.toFixed(2)}\nInformado: R$ ${dinheiroInformado.toFixed(2)}\nResultado: ${statusDiff}`);
+
+    alert(
+      `🔒 CAIXA FECHADO COM SUCESSO!\n` +
+      `Operador Responsável: ${validacao.operador.nome}\n\n` +
+      `💵 DINHEIRO NA GAVETA (Fundo R$ ${sessaoCaixaAtiva.valorInicialSuprimento.toFixed(2)} + Vendas R$ ${vendasDinheiroSessao.toFixed(2)}):\n` +
+      `  • Esperado: R$ ${dinheiroEsperado.toFixed(2)}\n` +
+      `  • Informado: R$ ${(dinheiroInformado || 0).toFixed(2)} (${statusDiffDinheiro})\n\n` +
+      `⚡ VENDAS NO PIX:\n` +
+      `  • Esperado: R$ ${pixEsperado.toFixed(2)}\n` +
+      `  • Informado: R$ ${(pixInformado || 0).toFixed(2)} (${statusDiffPix})\n\n` +
+      `💳 VENDAS NO CARTÃO:\n` +
+      `  • Esperado: R$ ${cartaoEsperado.toFixed(2)}\n` +
+      `  • Informado: R$ ${(cartaoInformado || 0).toFixed(2)} (${statusDiffCartao})\n\n` +
+      `══════════════════════════════════\n` +
+      `📊 BALANÇO GERAL DO TURNO (Fundo + Vendas):\n` +
+      `  • Total Geral Esperado: R$ ${totalEsperadoGeral.toFixed(2)}\n` +
+      `  • Total Geral Informado: R$ ${totalInformadoGeral.toFixed(2)}\n` +
+      `  • Resultado Geral: ${statusDiffGeral}`
+    );
 
     if (motivoCaixaObrigatorio) {
       setMotivoCaixaObrigatorio(null);
@@ -1631,6 +1709,8 @@ export default function App() {
   const handleLoginSucesso = async (sessao: SessaoUsuario) => {
     const novoToken = gerarSessaoToken();
     setSessaoTokenAtivo(novoToken);
+    localStorage.setItem('sessao_ativa_token', novoToken);
+    localStorage.setItem('usuario_autenticado', 'true');
     setAvisoDesconectadoMultiAparelho(null);
 
     setPerfilAtivo(sessao.tipo);
@@ -1705,6 +1785,14 @@ export default function App() {
       encerrarSessaoAtivaNoFirestore(userKey, token);
     }
 
+    // Limpeza total de persistência de sessão para impedir acesso indevido ao recarregar a página
+    localStorage.removeItem('usuario_autenticado');
+    localStorage.removeItem('perfilAtivoTipo');
+    localStorage.removeItem('operadorAtivoId');
+    localStorage.removeItem('sessao_ativa_token');
+
+    setOperadorAtivoId(null);
+    setSessaoTokenAtivo('');
     setMotivoCaixaObrigatorio(null);
     setTelaLoginVisivel(true);
   };
