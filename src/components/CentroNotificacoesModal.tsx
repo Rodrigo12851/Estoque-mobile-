@@ -59,7 +59,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
   const [copiado, setCopiado] = useState<boolean>(false);
   const [limiarInput, setLimiarInput] = useState<string>(String(limiarEstoqueMinimo));
   const [itemPerdaModal, setItemPerdaModal] = useState<ItemEstoque | null>(null);
-  const [qtdPerdaInput, setQtdPerdaInput] = useState<number>(1);
+  const [qtdPerdaInput, setQtdPerdaInput] = useState<string | number>(1);
   const [motivoPerdaInput, setMotivoPerdaInput] = useState<string>('Produto Vencido');
   const [msgPerda, setMsgPerda] = useState<string>('');
 
@@ -1264,8 +1264,23 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                   type="number"
                   min="1"
                   max={itemPerdaModal.quantidade}
-                  value={qtdPerdaInput}
-                  onChange={(e) => setQtdPerdaInput(parseInt(e.target.value, 10) || 0)}
+                  value={qtdPerdaInput === '' ? '' : qtdPerdaInput}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      setQtdPerdaInput('');
+                      return;
+                    }
+                    const limpo = val.replace(/^0+(?=\d)/, '');
+                    const num = parseInt(limpo, 10);
+                    setQtdPerdaInput(isNaN(num) ? '' : num);
+                  }}
+                  onBlur={() => {
+                    if (qtdPerdaInput === '' || Number(qtdPerdaInput) < 1) {
+                      setQtdPerdaInput(1);
+                    }
+                  }}
                   style={{
                     width: '100%',
                     padding: '8px 12px',
@@ -1310,11 +1325,12 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                 <button
                   type="button"
                   onClick={() => {
-                    if (isNaN(qtdPerdaInput) || qtdPerdaInput < 1) {
+                    const qtdNum = typeof qtdPerdaInput === 'number' ? qtdPerdaInput : (parseInt(qtdPerdaInput, 10) || 0);
+                    if (isNaN(qtdNum) || qtdNum < 1) {
                       setMsgPerda('⚠️ Digite uma quantidade válida!');
                       return;
                     }
-                    if (qtdPerdaInput > itemPerdaModal.quantidade) {
+                    if (qtdNum > itemPerdaModal.quantidade) {
                       setMsgPerda('⚠️ Quantidade maior que o estoque no lote!');
                       return;
                     }
@@ -1324,7 +1340,7 @@ export const CentroNotificacoesModal: React.FC<CentroNotificacoesModalProps> = (
                         itemPerdaModal.codigo,
                         itemPerdaModal.validade,
                         itemPerdaModal.lote,
-                        qtdPerdaInput,
+                        qtdNum,
                         motivoPerdaInput
                       );
                     }

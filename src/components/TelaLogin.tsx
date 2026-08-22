@@ -8,6 +8,10 @@ interface TelaLoginProps {
   senhaMasterPadrao?: string;
 }
 
+const MAX_TENTATIVAS = 5;
+const MINUTOS_BLOQUEIO = 5;
+const TEMPO_BLOQUEIO_MS = MINUTOS_BLOQUEIO * 60 * 1000;
+
 export const TelaLogin: React.FC<TelaLoginProps> = ({
   visivel,
   listaSupermercados,
@@ -20,21 +24,115 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
   const [erro, setErro] = useState<string>('');
   const [carregando, setCarregando] = useState<boolean>(false);
 
-  // Garante que toda vez que a tela de login for exibida (ex: após logout ou recarregar deslogado), os campos fiquem 100% limpos
+  // Estados de proteção contra força bruta
+  const [tentativasFalhas, setTentativasFalhas] = useState<number>(() => {
+    const salvo = localStorage.getItem('tentativas_falhas_login');
+    return salvo ? parseInt(salvo, 10) || 0 : 0;
+  });
+  const [bloqueadoAte, setBloqueadoAte] = useState<number | null>(() => {
+    const salvo = localStorage.getItem('bloqueio_login_timestamp');
+    if (salvo) {
+      const ts = parseInt(salvo, 10);
+      if (ts > Date.now()) return ts;
+    }
+    return null;
+  });
+  const [segundosRestantes, setSegundosRestantes] = useState<number>(0);
+
+  // Efeito para checar e atualizar o bloqueio ativo com cronômetro em tempo real
+  React.useEffect(() => {
+    if (!bloqueadoAte) {
+      setSegundosRestantes(0);
+      return;
+    }
+
+    const atualizarContador = () => {
+      const agora = Date.now();
+      const dif = Math.max(0, Math.ceil((bloqueadoAte - agora) / 1000));
+      setSegundosRestantes(dif);
+
+      if (dif <= 0) {
+        setBloqueadoAte(null);
+        setTentativasFalhas(0);
+        localStorage.removeItem('bloqueio_login_timestamp');
+        localStorage.removeItem('tentativas_falhas_login');
+        setErro('');
+      }
+    };
+
+    atualizarContador();
+    const timer = setInterval(atualizarContador, 1000);
+    return () => clearInterval(timer);
+  }, [bloqueadoAte]);
+
+  // Garante que toda vez que a tela de login for exibida, os campos fiquem limpos
   React.useEffect(() => {
     if (visivel) {
       setUsuarioOuCpf('');
       setSenhaOuPin('');
       setSenhaVisivel(false);
-      setErro('');
       setCarregando(false);
+
+      // Checa se há bloqueio ativo salvo
+      const salvoBloqueio = localStorage.getItem('bloqueio_login_timestamp');
+      if (salvoBloqueio) {
+        const ts = parseInt(salvoBloqueio, 10);
+        if (ts > Date.now()) {
+          setBloqueadoAte(ts);
+        } else {
+          setBloqueadoAte(null);
+          localStorage.removeItem('bloqueio_login_timestamp');
+          localStorage.removeItem('tentativas_falhas_login');
+        }
+      }
     }
   }, [visivel]);
 
   if (!visivel) return null;
 
+  const registrarFalhaLogin = () => {
+    const novasFalhas = tentativasFalhas + 1;
+    setTentativasFalhas(novasFalhas);
+    localStorage.setItem('tentativas_falhas_login', String(novasFalhas));
+
+    if (novasFalhas >= MAX_TENTATIVAS) {
+      const timestampBloqueio = Date.now() + TEMPO_BLOQUEIO_MS;
+      setBloqueadoAte(timestampBloqueio);
+      localStorage.setItem('bloqueio_login_timestamp', String(timestampBloqueio));
+      setErro(
+        `🚨 LIMITE DE TENTATIVAS EXCEDIDO! Por motivos de segurança contra programas de força bruta, o sistema foi BLOQUEADO por ${MINUTOS_BLOQUEIO} minutos.`
+      );
+    } else {
+      const restantes = MAX_TENTATIVAS - novasFalhas;
+      setErro(
+        `Login ou senha incorretos. Tentativa ${novasFalhas} de ${MAX_TENTATIVAS}. (${restantes} tentativa${
+          restantes > 1 ? 's restantes' : ' restante'
+        } antes do bloqueio temporário de ${MINUTOS_BLOQUEIO} minutos).`
+      );
+    }
+  };
+
+  const limparFalhasLogin = () => {
+    setTentativasFalhas(0);
+    setBloqueadoAte(null);
+    localStorage.removeItem('tentativas_falhas_login');
+    localStorage.removeItem('bloqueio_login_timestamp');
+  };
+
+  const formatarTempo = (seg: number) => {
+    const m = Math.floor(seg / 60);
+    const s = seg % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (bloqueadoAte && Date.now() < bloqueadoAte) {
+      setErro(`Sistema bloqueado por segurança. Aguarde ${formatarTempo(segundosRestantes)}.`);
+      return;
+    }
+
     setErro('');
     setCarregando(true);
 
@@ -99,6 +197,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
       passDigitada === 'admin';
 
     if (isMasterUser && isMasterPass) {
+      limparFalhasLogin();
       setCarregando(false);
       onLoginSucesso({
         tipo: 'dona_app',
@@ -136,6 +235,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
           return;
         }
 
+        limparFalhasLogin();
         setCarregando(false);
         onLoginSucesso({
           tipo: 'admin_loja',
@@ -194,6 +294,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
           passDigitada === '1234';
 
         if (isPinCorreto) {
+          limparFalhasLogin();
           setCarregando(false);
           onLoginSucesso({
             tipo: 'caixa',
@@ -216,6 +317,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
       (passDigitada === '123' || passDigitada === '1234')
     ) {
       const lojaPadrao = listaSupermercados.length > 0 ? listaSupermercados[0] : { id: 'loja_matriz_01', nome: 'Supermercado Matriz' };
+      limparFalhasLogin();
       setCarregando(false);
       onLoginSucesso({
         tipo: 'caixa',
@@ -228,9 +330,9 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
       return;
     }
 
-    // 5. Credenciais não encontradas
+    // 5. Credenciais inválidas: contabiliza falha para bloqueio de força bruta
     setCarregando(false);
-    setErro('Login ou senha incorretos. Verifique suas credenciais e tente novamente.');
+    registrarFalhaLogin();
   };
 
   return (
@@ -241,81 +343,145 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(15, 23, 42, 0.94)',
-        backdropFilter: 'blur(10px)',
+        width: '100vw',
+        height: '100vh',
+        minHeight: '100dvh',
+        background: '#090d16',
         zIndex: 999999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
+        padding: '20px',
+        boxSizing: 'border-box',
+        overflowY: 'auto',
       }}
     >
+      {/* BACKGROUND DECORATIVO INTERNO 100% OPACO */}
       <div
         style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'radial-gradient(circle at 50% 20%, #1e293b 0%, #090d16 80%)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'relative',
           background: '#ffffff',
           width: '100%',
-          maxWidth: '400px',
-          borderRadius: '20px',
-          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.45)',
-          border: '1px solid #cbd5e1',
+          maxWidth: '460px',
+          borderRadius: '24px',
+          boxShadow: '0 25px 70px rgba(0, 0, 0, 0.7)',
+          border: '1px solid #334155',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          animation: 'fadeIn 0.2s ease-out',
+          margin: 'auto',
         }}
       >
-        {/* CABEÇALHO BLINDADO SEM BOTÃO DE FECHAR */}
+        {/* CABEÇALHO DA TELA DE LOGIN */}
         <div
           style={{
             background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-            padding: '28px 24px 22px 24px',
+            padding: '32px 28px 24px 28px',
             color: '#ffffff',
             textAlign: 'center',
           }}
         >
           <div
             style={{
-              width: '64px',
-              height: '64px',
-              margin: '0 auto 12px auto',
+              width: '68px',
+              height: '68px',
+              margin: '0 auto 14px auto',
               background: 'rgba(255, 255, 255, 0.2)',
-              borderRadius: '50%',
+              borderRadius: '20px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '2rem',
-              boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
+              fontSize: '2.2rem',
+              boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
             }}
           >
-            🔐
+            🏪
           </div>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
-            Acesso ao Sistema
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
+            Sistema de Supermercados
           </h2>
-          <p style={{ fontSize: '0.88rem', margin: '6px 0 0 0', opacity: 0.92, fontWeight: 500 }}>
-            Digite seu login e senha para entrar
+          <p style={{ fontSize: '0.9rem', margin: '6px 0 0 0', opacity: 0.92, fontWeight: 500 }}>
+            Identifique-se com seu login e senha para acessar
           </p>
         </div>
 
         {/* FORMULÁRIO EXCLUSIVO COM APENAS LOGIN E SENHA */}
-        <div style={{ padding: '24px 22px' }}>
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* CAMPO: LOGIN / USUÁRIO / CPF */}
-            <div>
-              <label
+        <div style={{ padding: '28px 26px' }}>
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* BANNER DE BLOQUEIO DE FORÇA BRUTA COM CONTAGEM REGRESSIVA */}
+            {bloqueadoAte && segundosRestantes > 0 ? (
+              <div
                 style={{
+                  background: '#fef2f2',
+                  border: '1.5px solid #ef4444',
+                  borderRadius: '14px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  color: '#991b1b',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '0.86rem',
-                  fontWeight: 700,
-                  color: '#1e293b',
-                  marginBottom: '8px',
+                  gap: '8px',
                 }}
               >
-                <span>👤</span>
-                <span>Usuário, CPF ou Login</span>
-              </label>
+                <div style={{ fontSize: '1.8rem' }}>🔒</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#b91c1c' }}>
+                  Acesso Bloqueado Temporariamente
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#7f1d1d', lineHeight: 1.4 }}>
+                  Múltiplas tentativas incorretas foram detectadas. Por segurança contra ataques automatizados, aguarde o término do tempo para tentar novamente.
+                </div>
+                <div
+                  style={{
+                    fontSize: '1.4rem',
+                    fontWeight: 900,
+                    color: '#dc2626',
+                    fontFamily: 'monospace',
+                    background: '#ffffff',
+                    padding: '6px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid #fca5a5',
+                    letterSpacing: '2px',
+                    marginTop: '4px',
+                  }}
+                >
+                  ⏱️ {formatarTempo(segundosRestantes)}
+                </div>
+              </div>
+            ) : null}
+
+            {/* CAMPO: LOGIN / USUÁRIO / CPF */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    color: '#1e293b',
+                    margin: 0,
+                  }}
+                >
+                  <span>👤</span>
+                  <span>Usuário, CPF ou Login</span>
+                </label>
+                {tentativasFalhas > 0 && !bloqueadoAte && (
+                  <span style={{ fontSize: '0.78rem', color: '#dc2626', fontWeight: 600 }}>
+                    Tentativa {tentativasFalhas} de {MAX_TENTATIVAS}
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 name="username_login_input"
@@ -323,16 +489,19 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
                 placeholder="Digite seu login, CPF ou usuário"
                 value={usuarioOuCpf}
                 onChange={(e) => setUsuarioOuCpf(e.target.value)}
+                disabled={!!bloqueadoAte}
                 style={{
                   width: '100%',
-                  padding: '13px 15px',
+                  padding: '14px 16px',
                   borderRadius: '12px',
                   border: '1.5px solid #cbd5e1',
-                  fontSize: '0.96rem',
+                  fontSize: '1rem',
                   boxSizing: 'border-box',
                   outline: 'none',
                   color: '#0f172a',
-                  background: '#f8fafc',
+                  background: bloqueadoAte ? '#f1f5f9' : '#f8fafc',
+                  opacity: bloqueadoAte ? 0.6 : 1,
+                  cursor: bloqueadoAte ? 'not-allowed' : 'text',
                   transition: 'border-color 0.2s',
                 }}
                 required
@@ -348,7 +517,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  fontSize: '0.86rem',
+                  fontSize: '0.88rem',
                   fontWeight: 700,
                   color: '#1e293b',
                   marginBottom: '8px',
@@ -365,16 +534,19 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
                   placeholder="Digite sua senha ou PIN"
                   value={senhaOuPin}
                   onChange={(e) => setSenhaOuPin(e.target.value)}
+                  disabled={!!bloqueadoAte}
                   style={{
                     width: '100%',
-                    padding: '13px 44px 13px 15px',
+                    padding: '14px 48px 14px 16px',
                     borderRadius: '12px',
                     border: '1.5px solid #cbd5e1',
-                    fontSize: '0.96rem',
+                    fontSize: '1rem',
                     boxSizing: 'border-box',
                     outline: 'none',
                     color: '#0f172a',
-                    background: '#f8fafc',
+                    background: bloqueadoAte ? '#f1f5f9' : '#f8fafc',
+                    opacity: bloqueadoAte ? 0.6 : 1,
+                    cursor: bloqueadoAte ? 'not-allowed' : 'text',
                     transition: 'border-color 0.2s',
                   }}
                   required
@@ -382,15 +554,16 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
                 <button
                   type="button"
                   onClick={() => setSenhaVisivel(!senhaVisivel)}
+                  disabled={!!bloqueadoAte}
                   style={{
                     position: 'absolute',
-                    right: '10px',
+                    right: '12px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     background: 'transparent',
                     border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1.2rem',
+                    cursor: bloqueadoAte ? 'not-allowed' : 'pointer',
+                    fontSize: '1.3rem',
                     color: '#64748b',
                     padding: '6px',
                     display: 'flex',
@@ -404,8 +577,8 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
               </div>
             </div>
 
-            {/* MENSAGEM DE ERRO */}
-            {erro && (
+            {/* MENSAGEM DE ERRO (QUANDO NÃO ESTIVER BLOQUEADO) */}
+            {erro && !bloqueadoAte && (
               <div
                 style={{
                   background: '#fef2f2',
@@ -413,7 +586,7 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
                   color: '#dc2626',
                   padding: '12px 14px',
                   borderRadius: '10px',
-                  fontSize: '0.86rem',
+                  fontSize: '0.88rem',
                   lineHeight: 1.45,
                   fontWeight: 600,
                 }}
@@ -425,22 +598,28 @@ export const TelaLogin: React.FC<TelaLoginProps> = ({
             {/* BOTÃO DE ENTRADA */}
             <button
               type="submit"
-              disabled={carregando}
+              disabled={carregando || !!bloqueadoAte}
               style={{
-                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                background: bloqueadoAte
+                  ? '#94a3b8'
+                  : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
                 color: '#ffffff',
                 border: 'none',
-                padding: '14px',
+                padding: '15px',
                 borderRadius: '12px',
                 fontWeight: 800,
-                fontSize: '1.02rem',
-                cursor: carregando ? 'wait' : 'pointer',
-                boxShadow: '0 6px 16px rgba(2, 132, 199, 0.35)',
-                marginTop: '4px',
+                fontSize: '1.05rem',
+                cursor: bloqueadoAte ? 'not-allowed' : carregando ? 'wait' : 'pointer',
+                boxShadow: bloqueadoAte ? 'none' : '0 6px 18px rgba(2, 132, 199, 0.4)',
+                marginTop: '6px',
                 transition: 'all 0.15s ease',
               }}
             >
-              {carregando ? 'Validando Acesso...' : 'Entrar no Sistema'}
+              {bloqueadoAte
+                ? `🔒 Bloqueado (${formatarTempo(segundosRestantes)})`
+                : carregando
+                ? 'Validando Acesso...'
+                : 'Entrar no Sistema'}
             </button>
           </form>
         </div>

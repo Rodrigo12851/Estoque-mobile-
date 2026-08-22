@@ -21,7 +21,7 @@ import {
   ClienteDevedor,
 } from '../types';
 
-// Real-time listener for Supermercados
+// Real-time listener for Supermercados (reflete deleções e adições instantaneamente)
 export function subscribeSupermercados(callback: (lojas: Supermercado[]) => void) {
   const colRef = collection(db, 'supermercados');
   return onSnapshot(
@@ -29,14 +29,19 @@ export function subscribeSupermercados(callback: (lojas: Supermercado[]) => void
     (snapshot) => {
       const lojas: Supermercado[] = [];
       snapshot.forEach((docSnap) => {
-        lojas.push({ id: docSnap.id, ...docSnap.data() } as Supermercado);
+        const data = docSnap.data() as Supermercado;
+        if (data && (data.nome || data.cnpj)) {
+          lojas.push({ id: docSnap.id, ...data });
+        }
       });
-      if (lojas.length > 0) {
-        callback(lojas);
-      }
+      callback(lojas);
     },
     (_err) => {
-      // Graceful offline/silent fallback
+      // Graceful offline fallback
+      try {
+        const salvo = localStorage.getItem('lista_supermercados_app');
+        if (salvo) callback(JSON.parse(salvo));
+      } catch (e) {}
     }
   );
 }
@@ -442,14 +447,82 @@ export async function excluirProdutoCatalogoFirestore(codigo: string) {
   }
 }
 
-// Delete Supermercado
+// Delete Supermercado and all linked data in Firestore
 export async function excluirSupermercadoFirestore(lojaId: string) {
   try {
     const docId = sanitizarIdDoc(lojaId);
-    const docRef = doc(db, 'supermercados', docId);
-    await deleteDoc(docRef);
+
+    // 1. Excluir documento do supermercado por docId sanitizado e direto
+    try {
+      await deleteDoc(doc(db, 'supermercados', docId));
+    } catch (e) {}
+    if (docId !== lojaId) {
+      try {
+        await deleteDoc(doc(db, 'supermercados', lojaId));
+      } catch (e) {}
+    }
+
+    // 2. Excluir por query caso o documento possua docId diferente
+    try {
+      const snapLojas = await getDocs(query(collection(db, 'supermercados'), where('id', '==', lojaId)));
+      for (const d of snapLojas.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
+
+    // 3. Excluir estoque vinculado à loja
+    try {
+      const snapEst = await getDocs(query(collection(db, 'estoque'), where('lojaId', '==', lojaId)));
+      for (const d of snapEst.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
+
+    // 4. Excluir operadores vinculados à loja
+    try {
+      const snapOp = await getDocs(query(collection(db, 'operadores'), where('lojaId', '==', lojaId)));
+      for (const d of snapOp.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
+
+    // 5. Excluir vendas vinculadas à loja
+    try {
+      const snapVen = await getDocs(query(collection(db, 'vendas'), where('lojaId', '==', lojaId)));
+      for (const d of snapVen.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
+
+    // 6. Excluir clientes devedores vinculados à loja
+    try {
+      const snapDev = await getDocs(query(collection(db, 'clientes_devedores'), where('lojaId', '==', lojaId)));
+      for (const d of snapDev.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
+
+    // 7. Excluir logs de auditoria vinculados à loja
+    try {
+      const snapLogs = await getDocs(query(collection(db, 'logs_auditoria'), where('lojaId', '==', lojaId)));
+      for (const d of snapLogs.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
   } catch (err) {
-    console.error('Erro ao excluir supermercado no Firestore:', err);
+    console.error('Erro ao excluir supermercado e seus registros no Firestore:', err);
+  }
+}
+
+// Limpeza total de todas as lojas e dados de teste para ambiente de produção
+export async function limparTodasLojasDeTesteFirestore() {
+  try {
+    const snapLojas = await getDocs(collection(db, 'supermercados'));
+    for (const d of snapLojas.docs) {
+      await deleteDoc(d.ref);
+    }
+  } catch (err) {
+    console.error('Erro ao limpar lojas no Firestore:', err);
   }
 }
 

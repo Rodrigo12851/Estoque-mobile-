@@ -68,6 +68,7 @@ import {
   excluirItemEstoqueFirestore,
   excluirProdutoCatalogoFirestore,
   excluirSupermercadoFirestore,
+  limparTodasLojasDeTesteFirestore,
   excluirOperadorFirestore,
   excluirClienteDevedorFirestore,
   inicializarDadosIniciaisFirestore,
@@ -210,20 +211,13 @@ export default function App() {
   // Supermarket Form & Store List
   const [listaSupermercados, setListaSupermercados] = useState<Supermercado[]>(() => {
     const salvo = localStorage.getItem('lista_supermercados_app');
-    if (salvo) {
+    if (salvo !== null && salvo !== undefined) {
       try {
-        return JSON.parse(salvo);
+        const parsed = JSON.parse(salvo);
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {}
     }
-    return [
-      {
-        id: 'loja_matriz_01',
-        nome: 'Supermercado Matriz',
-        cnpj: '00.000.000/0001-00',
-        senha: 'admin',
-        dataCadastro: new Date().toLocaleDateString('pt-BR'),
-      },
-    ];
+    return [];
   });
   const [lojaEditandoId, setLojaEditandoId] = useState<string | null>(null);
   const [buscaLoja, setBuscaLoja] = useState<string>('');
@@ -343,7 +337,7 @@ export default function App() {
 
   // Stock Sale/Markdown Modal
   const [prodAtual, setProdAtual] = useState<ItemEstoque | null>(null);
-  const [qtdBaixa, setQtdBaixa] = useState<number>(1);
+  const [qtdBaixa, setQtdBaixa] = useState<number | string>(1);
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix' | 'fiado'>('pix');
   const [clienteFiadoSelecionadoId, setClienteFiadoSelecionadoId] = useState<string>('');
   const [msgVenda, setMsgVenda] = useState<React.ReactNode>('');
@@ -511,26 +505,26 @@ export default function App() {
     return vendasIniciais;
   });
 
-  // Firebase Firestore Real-time Cloud Database Sync & Initial Seeding
+  // Firebase Firestore Real-time Cloud Database Sync
   useEffect(() => {
-    // Seed all records if collections are empty in Firestore
-    inicializarDadosIniciaisFirestore(listaSupermercados, catalogoGlobal, listaOperadores, vendas, estoque, clientesDevedores);
-
-    // Auto-migrar do banco antigo para o novo se ainda não foi feito
-    const jaMigrou = localStorage.getItem('migracao_auto_banco_antigo_concluida_v1');
-    if (!jaMigrou) {
-      migrarDiretamenteDoBancoAntigoParaNovo().then((res) => {
-        if (res.sucesso) {
-          safeLocalStorageSet('migracao_auto_banco_antigo_concluida_v1', 'true');
-          console.log('Migração automática do banco antigo concluída:', res.detalhe);
-        }
-      }).catch((e) => console.warn('Aviso na migracao automatica:', e));
-    }
-
-    // Subscribe to Supermercados
+    // Subscribe to Supermercados em tempo real (reflete adições e exclusões instantaneamente)
     const unsubLojas = subscribeSupermercados((lojas) => {
       setListaSupermercados(lojas);
       safeLocalStorageSet('lista_supermercados_app', JSON.stringify(lojas));
+      if (lojas.length > 0) {
+        const atualSalvo = localStorage.getItem('supermercadoAtualId');
+        if (!atualSalvo || !lojas.some((l) => l.id === atualSalvo)) {
+          setSupermercadoAtual(lojas[0].id);
+          setNomeSupermercadoAtivo(lojas[0].nome);
+          safeLocalStorageSet('supermercadoAtualId', lojas[0].id);
+          safeLocalStorageSet('supermercadoNome', lojas[0].nome);
+        }
+      } else {
+        setSupermercadoAtual('');
+        setNomeSupermercadoAtivo('');
+        localStorage.removeItem('supermercadoAtualId');
+        localStorage.removeItem('supermercadoNome');
+      }
     });
 
     // Subscribe to Catálogo Global
@@ -1422,19 +1416,65 @@ export default function App() {
     setMsgRegLoja(<span style={{ color: 'var(--primario)' }}>Editando: {loja.nome || ''}</span>);
   };
 
-  const excluirSupermercado = (idLoja: string) => {
+  const excluirSupermercado = async (idLoja: string) => {
     const lojaExcluir = listaSupermercados.find((l) => l.id === idLoja);
     if (!lojaExcluir) return;
-    if (confirm(`Deseja realmente excluir o supermercado "${lojaExcluir.nome}" (${lojaExcluir.cnpj}) do banco de dados?`)) {
+    if (confirm(`Deseja realmente excluir o supermercado "${lojaExcluir.nome}" (${lojaExcluir.cnpj}) e todos os seus dados vinculados do banco de dados?`)) {
       const novaLista = listaSupermercados.filter((l) => l.id !== idLoja);
       setListaSupermercados(novaLista);
       localStorage.setItem('lista_supermercados_app', JSON.stringify(novaLista));
-      excluirSupermercadoFirestore(idLoja);
-      if (supermercadoAtual === idLoja && novaLista.length > 0) {
-        alternarLojaAtiva(novaLista[0]);
+
+      // Limpeza de chaves locais da loja excluída
+      localStorage.removeItem(`estoque_${idLoja}`);
+      localStorage.removeItem(`vendas_${idLoja}`);
+      localStorage.removeItem(`operadores_caixa_${idLoja}`);
+      localStorage.removeItem(`clientes_devedores_${idLoja}`);
+      localStorage.removeItem(`logs_auditoria_${idLoja}`);
+      localStorage.removeItem(`sessao_caixa_${idLoja}`);
+      localStorage.removeItem(`movimentacoes_caixa_${idLoja}`);
+      localStorage.removeItem(`config_supermercado_${idLoja}`);
+
+      // Exclusão definitiva no Firestore
+      await excluirSupermercadoFirestore(idLoja);
+
+      if (supermercadoAtual === idLoja) {
+        if (novaLista.length > 0) {
+          alternarLojaAtiva(novaLista[0]);
+        } else {
+          setSupermercadoAtual('');
+          setNomeSupermercadoAtivo('');
+          localStorage.removeItem('supermercadoAtualId');
+          localStorage.removeItem('supermercadoNome');
+        }
       }
-      setMsgRegLoja(<span style={{ color: 'var(--sucesso)' }}>🗑️ Supermercado excluído do banco de dados!</span>);
-      setTimeout(() => setMsgRegLoja(''), 2500);
+
+      setMsgRegLoja(<span style={{ color: 'var(--sucesso)' }}>🗑️ Supermercado "{lojaExcluir.nome}" excluído do banco de dados!</span>);
+      setTimeout(() => setMsgRegLoja(''), 3000);
+    }
+  };
+
+  const limparTodasLojasDeTeste = async () => {
+    if (confirm('⚠️ ATENÇÃO [Dona do App]: Deseja excluir TODAS as lojas cadastradas de teste do banco de dados para iniciar o sistema 100% limpo em produção?')) {
+      for (const l of listaSupermercados) {
+        localStorage.removeItem(`estoque_${l.id}`);
+        localStorage.removeItem(`vendas_${l.id}`);
+        localStorage.removeItem(`operadores_caixa_${l.id}`);
+        localStorage.removeItem(`clientes_devedores_${l.id}`);
+        localStorage.removeItem(`logs_auditoria_${l.id}`);
+        localStorage.removeItem(`sessao_caixa_${l.id}`);
+        localStorage.removeItem(`movimentacoes_caixa_${l.id}`);
+        localStorage.removeItem(`config_supermercado_${l.id}`);
+      }
+      setListaSupermercados([]);
+      localStorage.setItem('lista_supermercados_app', JSON.stringify([]));
+      setSupermercadoAtual('');
+      setNomeSupermercadoAtivo('');
+      localStorage.removeItem('supermercadoAtualId');
+      localStorage.removeItem('supermercadoNome');
+
+      await limparTodasLojasDeTesteFirestore();
+      setMsgRegLoja(<span style={{ color: 'var(--sucesso)' }}>🧹 Todas as lojas de teste foram removidas com sucesso! Você já pode cadastrar suas lojas reais de produção.</span>);
+      setTimeout(() => setMsgRegLoja(''), 4500);
     }
   };
 
@@ -2952,7 +2992,9 @@ export default function App() {
       return;
     }
 
-    if (!prodAtual || isNaN(qtdBaixa) || qtdBaixa < 1) {
+    const qtdNumerica = typeof qtdBaixa === 'number' ? qtdBaixa : (parseInt(qtdBaixa, 10) || 0);
+
+    if (!prodAtual || isNaN(qtdNumerica) || qtdNumerica < 1) {
       setMsgVenda(<span style={{ color: 'var(--erro)' }}>Digite uma quantidade válida!</span>);
       return;
     }
@@ -2961,7 +3003,7 @@ export default function App() {
       (p) => p.codigo === prodAtual.codigo && p.validade === prodAtual.validade && p.lote === prodAtual.lote
     );
 
-    if (!itemEmEstoque || qtdBaixa > itemEmEstoque.quantidade) {
+    if (!itemEmEstoque || qtdNumerica > itemEmEstoque.quantidade) {
       setMsgVenda(<span style={{ color: 'var(--erro)' }}>Estoque insuficiente!</span>);
       return;
     }
@@ -2979,7 +3021,7 @@ export default function App() {
         return;
       }
 
-      const valorTotalCompra = prodAtual.preco_venda * qtdBaixa;
+      const valorTotalCompra = prodAtual.preco_venda * qtdNumerica;
       if (
         clienteFiadoEncontrado.limiteFiado &&
         clienteFiadoEncontrado.limiteFiado > 0 &&
@@ -2992,7 +3034,7 @@ export default function App() {
       }
     }
 
-    const novaQuantidade = itemEmEstoque.quantidade - qtdBaixa;
+    const novaQuantidade = itemEmEstoque.quantidade - qtdNumerica;
     let novoEstoque: ItemEstoque[];
 
     if (novaQuantidade <= 0) {
@@ -3036,16 +3078,16 @@ export default function App() {
         {
           codigo: prodAtual.codigo,
           nome: prodAtual.nome,
-          quantidade: qtdBaixa,
+          quantidade: qtdNumerica,
           preco_unitario: prodAtual.preco_venda,
           preco_custo: prodAtual.preco_custo,
-          subtotal: prodAtual.preco_venda * qtdBaixa,
+          subtotal: prodAtual.preco_venda * qtdNumerica,
           lote: prodAtual.lote,
           validade: prodAtual.validade,
           foto: prodAtual.foto,
         },
       ],
-      valorTotal: prodAtual.preco_venda * qtdBaixa,
+      valorTotal: prodAtual.preco_venda * qtdNumerica,
       formaPagamento: formaPagamento,
       status: 'concluida',
     };
@@ -3055,7 +3097,7 @@ export default function App() {
       novaVenda.clienteFiadoId = clienteFiadoEncontrado.id;
       novaVenda.clienteFiadoNome = clienteFiadoEncontrado.nome;
 
-      const valorTotalCompra = prodAtual.preco_venda * qtdBaixa;
+      const valorTotalCompra = prodAtual.preco_venda * qtdNumerica;
       const novaCompraFiado: CompraFiado = {
         id: 'comp_' + Date.now(),
         vendaId: novaVenda.id,
@@ -4538,17 +4580,37 @@ export default function App() {
                 gap: '8px',
               }}
             >
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--texto)' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--texto)', margin: 0 }}>
                 🏪 Lojas Cadastradas (Total: {listaSupermercados.length})
               </h3>
-              <input
-                type="text"
-                className="input-modal"
-                style={{ maxWidth: '240px', padding: '6px 10px', fontSize: '0.85rem' }}
-                placeholder="Pesquisar loja por nome ou CNPJ..."
-                value={buscaLoja}
-                onChange={(e) => setBuscaLoja(e.target.value)}
-              />
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  className="input-modal"
+                  style={{ maxWidth: '200px', padding: '6px 10px', fontSize: '0.85rem' }}
+                  placeholder="Pesquisar loja por nome ou CNPJ..."
+                  value={buscaLoja}
+                  onChange={(e) => setBuscaLoja(e.target.value)}
+                />
+                {listaSupermercados.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-acao-rel"
+                    style={{
+                      background: '#fee2e2',
+                      color: '#b91c1c',
+                      border: '1px solid #fca5a5',
+                      fontWeight: 600,
+                      fontSize: '0.8rem',
+                      padding: '6px 10px',
+                    }}
+                    onClick={limparTodasLojasDeTeste}
+                    title="Excluir todas as lojas cadastradas para zerar o banco para produção"
+                  >
+                    🧹 Limpar Lojas de Teste
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="tabela-relatorio">
@@ -5805,14 +5867,34 @@ export default function App() {
                   className="input-modal"
                   min="1"
                   max={prodAtual.quantidade}
-                  value={qtdBaixa}
-                  onChange={(e) => setQtdBaixa(parseInt(e.target.value, 10) || 0)}
+                  value={qtdBaixa === '' ? '' : qtdBaixa}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      setQtdBaixa('');
+                      return;
+                    }
+                    const limpo = val.replace(/^0+(?=\d)/, '');
+                    const num = parseInt(limpo, 10);
+                    setQtdBaixa(isNaN(num) ? '' : num);
+                  }}
+                  onBlur={() => {
+                    if (qtdBaixa === '' || Number(qtdBaixa) < 1) {
+                      setQtdBaixa(1);
+                    }
+                  }}
                 />
               </div>
               <div className="total-texto">
                 Total: R${' '}
                 <span id="total-v">
-                  {(prodAtual.preco_venda * (isNaN(qtdBaixa) ? 0 : qtdBaixa)).toFixed(2).replace('.', ',')}
+                  {(
+                    prodAtual.preco_venda *
+                    (typeof qtdBaixa === 'number' ? qtdBaixa : parseInt(qtdBaixa, 10) || 0)
+                  )
+                    .toFixed(2)
+                    .replace('.', ',')}
                 </span>
               </div>
 
