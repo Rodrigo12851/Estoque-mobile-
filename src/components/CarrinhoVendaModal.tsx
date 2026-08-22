@@ -37,6 +37,8 @@ interface CarrinhoVendaModalProps {
   sessaoCaixaAberta: boolean;
   onAbrirCaixaModal?: () => void;
   obterFotoProduto: (codigo: string, foto?: string) => string;
+  onAbrirLeitorCameraContinuo?: () => void;
+  ultimoItemBipadoToast?: string;
 }
 
 export const CarrinhoVendaModal: React.FC<CarrinhoVendaModalProps> = ({
@@ -55,6 +57,8 @@ export const CarrinhoVendaModal: React.FC<CarrinhoVendaModalProps> = ({
   sessaoCaixaAberta,
   onAbrirCaixaModal,
   obterFotoProduto,
+  onAbrirLeitorCameraContinuo,
+  ultimoItemBipadoToast,
 }) => {
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix' | 'fiado'>('pix');
   const [clienteFiadoId, setClienteFiadoId] = useState<string>('');
@@ -197,7 +201,30 @@ export const CarrinhoVendaModal: React.FC<CarrinhoVendaModalProps> = ({
 
         {/* CORPO DO MODAL (ROLAGEM) */}
         <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
-          {/* BUSCA RÁPIDA PARA ADICIONAR MAIS PRODUTOS */}
+          {/* TOAST DE ITEM BIPADO RECENTEMENTE */}
+          {ultimoItemBipadoToast && (
+            <div
+              style={{
+                background: '#ecfdf5',
+                color: '#065f46',
+                border: '1.5px solid #6ee7b7',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                animation: 'fadeIn 0.2s ease',
+              }}
+            >
+              <span>🔔</span>
+              <span>{ultimoItemBipadoToast}</span>
+            </div>
+          )}
+
+          {/* PAINEL DE BIPAGEM RÁPIDA / CÂMERA & LEITOR USB */}
           <div
             style={{
               background: '#f8fafc',
@@ -207,24 +234,51 @@ export const CarrinhoVendaModal: React.FC<CarrinhoVendaModalProps> = ({
               marginBottom: '16px',
             }}
           >
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                color: '#334155',
-                marginBottom: '6px',
-              }}
-            >
-              <span>🔍</span>
-              <span>Adicionar outro item ao carrinho:</span>
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  color: '#334155',
+                }}
+              >
+                <span>🔍</span>
+                <span>Adicionar produto por nome ou código:</span>
+              </label>
+
+              {onAbrirLeitorCameraContinuo && (
+                <button
+                  type="button"
+                  onClick={onAbrirLeitorCameraContinuo}
+                  title="Abrir a câmera do celular/tablet para bipar vários códigos de barras seguidos"
+                  style={{
+                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)',
+                  }}
+                >
+                  <span style={{ fontSize: '1rem' }}>📷</span>
+                  <span>Bipar com Câmera (Contínuo)</span>
+                </button>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"
-                placeholder="Digite o nome, código de barras ou marca..."
+                placeholder="Digite nome, código de barras ou use leitor USB..."
                 value={buscaRapida}
                 onChange={(e) => setBuscaRapida(e.target.value)}
                 style={{
@@ -253,6 +307,22 @@ export const CarrinhoVendaModal: React.FC<CarrinhoVendaModalProps> = ({
                   Limpar
                 </button>
               )}
+            </div>
+
+            <div
+              style={{
+                marginTop: '6px',
+                fontSize: '0.72rem',
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span>⚡</span>
+              <span>
+                <b>Leitor USB/Bluetooth & Câmera:</b> Bipou o código, o sistema adiciona automaticamente +1 ao carrinho!
+              </span>
             </div>
 
             {/* LISTA DE SUGESTÕES RÁPIDAS ENCONTRADAS */}

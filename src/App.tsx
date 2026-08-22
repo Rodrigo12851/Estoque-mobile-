@@ -31,7 +31,7 @@ import { TelaLogin } from './components/TelaLogin';
 import { TermoConcordanciaModal } from './components/TermoConcordanciaModal';
 import { AlterarCredenciaisDonoModal } from './components/AlterarCredenciaisDonoModal';
 import { ManualUsuarioModal } from './components/ManualUsuarioModal';
-import { tocarBeepCaixa, tocarSomSucessoVenda } from './lib/soundUtils';
+import { tocarBeepCaixa, tocarSomSucessoVenda, tocarSomAlerta } from './lib/soundUtils';
 import { exportarEstoqueCSV } from './lib/exportUtils';
 import { processarCodigoBarraBalanca } from './lib/balancaUtils';
 import {
@@ -148,10 +148,23 @@ export default function App() {
   const [busca, setBusca] = useState<string>('');
   const [menuAtivo, setMenuAtivo] = useState<boolean>(false);
 
-  // Scanner States
+  // Scanner States (Câmera & Leitor Físico USB/Bluetooth)
   const [leitorAtivo, setLeitorAtivo] = useState<boolean>(false);
-  const [destinoLeitor, setDestinoLeitor] = useState<'busca' | 'cadastro' | 'lote' | 'relatorio'>('busca');
+  const [destinoLeitor, setDestinoLeitor] = useState<'busca' | 'cadastro' | 'lote' | 'relatorio' | 'carrinho'>('carrinho');
   const [processandoOCR, setProcessandoOCR] = useState<boolean>(false);
+  const [ultimoItemBipadoToast, setUltimoItemBipadoToast] = useState<string>('');
+  const [ultimoItemScaneadoInfo, setUltimoItemScaneadoInfo] = useState<{
+    nome: string;
+    codigo: string;
+    preco: number;
+    quantidadeNoCarrinho: number;
+    estoqueDisponivel: number;
+    status: 'sucesso' | 'erro' | 'aviso';
+    mensagem?: string;
+    timestamp: number;
+  } | null>(null);
+  const [lanternaAtiva, setLanternaAtiva] = useState<boolean>(false);
+  const ultimoCodigoLidoRef = useRef<{ codigo: string; timestamp: number }>({ codigo: '', timestamp: 0 });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
@@ -2004,9 +2017,20 @@ export default function App() {
   };
 
   // Barcode Scanner Camera Logic
-  const abrirLeitorGeral = () => {
-    setDestinoLeitor('busca');
+  const abrirLeitorCarrinho = () => {
+    setDestinoLeitor('carrinho');
+    setUltimoItemScaneadoInfo(null);
     iniciarLeitor();
+  };
+
+  const abrirLeitorGeral = () => {
+    // Se o caixa estiver aberto ou estiver na tela principal/vendas, abre no modo carrinho contínuo
+    if (sessaoCaixaAtiva && sessaoCaixaAtiva.status === 'aberto') {
+      abrirLeitorCarrinho();
+    } else {
+      setDestinoLeitor('busca');
+      iniciarLeitor();
+    }
   };
 
   const abrirLeitorCadastro = () => {
@@ -2024,10 +2048,215 @@ export default function App() {
     iniciarLeitor();
   };
 
+  const toggleLanterna = async () => {
+    if (!mediaStreamRef.current) return;
+    const track = mediaStreamRef.current.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      // @ts-ignore
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      // @ts-ignore
+      if (capabilities.torch) {
+        const novoEstado = !lanternaAtiva;
+        // @ts-ignore
+        await track.applyConstraints({ advanced: [{ torch: novoEstado }] });
+        setLanternaAtiva(novoEstado);
+      } else {
+        alert('Lanterna / Flash não disponível nesta câmera ou dispositivo.');
+      }
+    } catch (e) {
+      console.warn('Erro lanterna:', e);
+    }
+  };
+
+  // Hardware Barcode Scanner Handler (Leitor Físico USB / Bluetooth)
+  const processarBipHardware = (codigoLido: string) => {
+    const codLimpo = codigoLido.trim();
+    if (!codLimpo) return;
+
+    // 1. Verificação de Balança (EAN-13 começando com '2')
+    const resBalanca = processarCodigoBarraBalanca(codLimpo, estoque);
+    if (resBalanca.isBalanca && resBalanca.itemEncontrado) {
+      if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+        tocarSomAlerta();
+        alert('⚠️ Caixa Fechado!\n\nAbra o turno de caixa antes de bipar etiquetas de balança.');
+        setModalCaixaVisivel(true);
+        return;
+      }
+      adicionarAoCarrinho(resBalanca.itemEncontrado, resBalanca.quantidadeCalculada || 1);
+      tocarBeepCaixa();
+      const msg = `⚡ Leitor USB: +${resBalanca.quantidadeCalculada} un/kg ${resBalanca.itemEncontrado.nome} (R$ ${resBalanca.precoTotal?.toFixed(2)}) no carrinho!`;
+      setUltimoItemBipadoToast(msg);
+      setTimeout(() => setUltimoItemBipadoToast(''), 3500);
+      return;
+    }
+
+    // 2. Produto no Estoque
+    const achou = estoque.find((p) => p.codigo === codLimpo || p.codigo_barras === codLimpo);
+    if (achou) {
+      if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+        tocarSomAlerta();
+        alert('⚠️ Caixa Fechado!\n\nAbra o turno de caixa antes de realizar vendas.');
+        setModalCaixaVisivel(true);
+        return;
+      }
+      adicionarAoCarrinho(achou, 1);
+      tocarBeepCaixa();
+      const msg = `⚡ Leitor USB: +1 ${achou.nome} (R$ ${achou.preco_venda.toFixed(2)}) no carrinho!`;
+      setUltimoItemBipadoToast(msg);
+      setTimeout(() => setUltimoItemBipadoToast(''), 3500);
+    } else {
+      tocarSomAlerta();
+      const noCatalogo = catalogoGlobal.find((c) => c.codigo === codLimpo);
+      const aviso = noCatalogo
+        ? `⚠️ Leitor USB: "${noCatalogo.nome}" sem lote no estoque desta loja!`
+        : `⚠️ Leitor USB: Código "${codLimpo}" não cadastrado no estoque!`;
+      setUltimoItemBipadoToast(aviso);
+      setTimeout(() => setUltimoItemBipadoToast(''), 4000);
+    }
+  };
+
+  // Keyboard Wedge Listener for Barcode Scanners (USB/Bluetooth)
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      
+      const now = Date.now();
+      const diff = now - lastKeyTime;
+      lastKeyTime = now;
+
+      if (e.key === 'Enter') {
+        // Fast burst typical of physical barcode gun (< 80ms interval between characters)
+        if (buffer.length >= 3 && diff < 85) {
+          const codigoLido = buffer.trim();
+          buffer = '';
+          if (codigoLido) {
+            if (!isInput || (target as HTMLInputElement).placeholder?.toLowerCase().includes('código') || (target as HTMLInputElement).placeholder?.toLowerCase().includes('barra')) {
+              e.preventDefault();
+            }
+            processarBipHardware(codigoLido);
+          }
+        } else {
+          buffer = '';
+        }
+        return;
+      }
+
+      if (e.key.length === 1) {
+        if (diff > 120) {
+          buffer = e.key; // Reset on slow typing
+        } else {
+          buffer += e.key; // Rapid stream from barcode reader
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [estoque, sessaoCaixaAtiva, carrinho, catalogoGlobal]);
+
   const processarCodigoScaneado = (codigoLido: string) => {
     const codLimpo = codigoLido.trim();
     const destino = destinoLeitorRef.current;
 
+    // NO MODO CARRINHO CONTÍNUO NÃO FECHAMOS A CÂMERA
+    if (destino === 'carrinho') {
+      // 1. Verificação de Balança
+      const resBalanca = processarCodigoBarraBalanca(codLimpo, estoque);
+      if (resBalanca.isBalanca && resBalanca.itemEncontrado) {
+        if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+          tocarSomAlerta();
+          setUltimoItemScaneadoInfo({
+            nome: resBalanca.itemEncontrado.nome,
+            codigo: codLimpo,
+            preco: resBalanca.precoTotal || resBalanca.itemEncontrado.preco_venda,
+            quantidadeNoCarrinho: 0,
+            estoqueDisponivel: resBalanca.itemEncontrado.quantidade,
+            status: 'erro',
+            mensagem: 'Caixa Fechado! Abra o turno do caixa.',
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
+        adicionarAoCarrinho(resBalanca.itemEncontrado, resBalanca.quantidadeCalculada || 1);
+        tocarBeepCaixa();
+        if (navigator.vibrate) {
+          try { navigator.vibrate([80, 40, 80]); } catch (e) {}
+        }
+
+        setUltimoItemScaneadoInfo({
+          nome: resBalanca.itemEncontrado.nome,
+          codigo: codLimpo,
+          preco: resBalanca.precoTotal || resBalanca.itemEncontrado.preco_venda,
+          quantidadeNoCarrinho: resBalanca.quantidadeCalculada || 1,
+          estoqueDisponivel: resBalanca.itemEncontrado.quantidade,
+          status: 'sucesso',
+          mensagem: `⚖️ Balança: ${resBalanca.quantidadeCalculada} un/kg (R$ ${resBalanca.precoTotal?.toFixed(2)})`,
+          timestamp: Date.now(),
+        });
+        setUltimoItemBipadoToast(`+${resBalanca.quantidadeCalculada} un/kg ${resBalanca.itemEncontrado.nome} no carrinho!`);
+        return;
+      }
+
+      // 2. Produto Normal no Estoque
+      const achou = estoque.find((p) => p.codigo === codLimpo || p.codigo_barras === codLimpo);
+      if (achou) {
+        if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+          tocarSomAlerta();
+          setUltimoItemScaneadoInfo({
+            nome: achou.nome,
+            codigo: codLimpo,
+            preco: achou.preco_venda,
+            quantidadeNoCarrinho: 0,
+            estoqueDisponivel: achou.quantidade,
+            status: 'erro',
+            mensagem: 'Caixa Fechado! Abra o turno do caixa.',
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
+        adicionarAoCarrinho(achou, 1);
+        tocarBeepCaixa();
+        if (navigator.vibrate) {
+          try { navigator.vibrate([70, 30, 70]); } catch (e) {}
+        }
+
+        const qtdAtualNoCarrinho = (carrinho.find((c) => c.codigo === achou.codigo)?.quantidade || 0) + 1;
+        setUltimoItemScaneadoInfo({
+          nome: achou.nome,
+          codigo: codLimpo,
+          preco: achou.preco_venda,
+          quantidadeNoCarrinho: qtdAtualNoCarrinho,
+          estoqueDisponivel: achou.quantidade,
+          status: 'sucesso',
+          mensagem: `Adicionado ao Carrinho! R$ ${achou.preco_venda.toFixed(2)}`,
+          timestamp: Date.now(),
+        });
+        setUltimoItemBipadoToast(`+1 ${achou.nome} (R$ ${achou.preco_venda.toFixed(2)}) no carrinho!`);
+      } else {
+        tocarSomAlerta();
+        const noCatalogo = catalogoGlobal.find((c) => c.codigo === codLimpo);
+        setUltimoItemScaneadoInfo({
+          nome: noCatalogo ? noCatalogo.nome : `Código ${codLimpo}`,
+          codigo: codLimpo,
+          preco: 0,
+          quantidadeNoCarrinho: 0,
+          estoqueDisponivel: 0,
+          status: 'erro',
+          mensagem: noCatalogo ? 'Sem lote no estoque desta loja!' : 'Código não cadastrado no estoque!',
+          timestamp: Date.now(),
+        });
+      }
+      return;
+    }
+
+    // MODOS UNITÁRIOS (FECHAM A CÂMERA)
     fecharLeitor();
     tocarBeepCaixa();
 
@@ -2040,7 +2269,6 @@ export default function App() {
     if (destino === 'busca') {
       setBusca(codLimpo);
 
-      // Verificação de Etiqueta de Balança (EAN-13 começando com '2')
       const resBalanca = processarCodigoBarraBalanca(codLimpo, estoque);
       if (resBalanca.isBalanca && resBalanca.itemEncontrado) {
         if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
@@ -2072,7 +2300,6 @@ export default function App() {
         setCadCategoria(achouCat.categoria || '');
         if (achouCat.imagem) setFotoTemp(achouCat.imagem);
       }
-      // AUTOMATICALLY query Gemini & Open Food Facts for title, brand, category & studio image
       consultarEANGemini(codLimpo);
     } else if (destino === 'lote') {
       setCadLote(codLimpo);
@@ -2083,6 +2310,7 @@ export default function App() {
 
   const iniciarLeitor = async () => {
     setLeitorAtivo(true);
+    setLanternaAtiva(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -2096,9 +2324,29 @@ export default function App() {
 
       let escaneou = false;
       const onDetect = (rawText: string) => {
-        if (escaneou || !rawText) return;
-        escaneou = true;
-        processarCodigoScaneado(rawText);
+        if (!rawText) return;
+        const cod = rawText.trim();
+        const destinoAtual = destinoLeitorRef.current;
+        const agora = Date.now();
+
+        if (destinoAtual === 'carrinho') {
+          // Anti-duplicate protection: 1.4s cooldown on the same barcode, 650ms on a different barcode
+          if (
+            ultimoCodigoLidoRef.current.codigo === cod &&
+            agora - ultimoCodigoLidoRef.current.timestamp < 1400
+          ) {
+            return;
+          }
+          if (agora - ultimoCodigoLidoRef.current.timestamp < 650) {
+            return;
+          }
+          ultimoCodigoLidoRef.current = { codigo: cod, timestamp: agora };
+          processarCodigoScaneado(cod);
+        } else {
+          if (escaneou) return;
+          escaneou = true;
+          processarCodigoScaneado(cod);
+        }
       };
 
       // 1. ZXing MultiFormat Reader (Runs on ALL Browsers: Chrome, iOS Safari, Android, Webviews)
@@ -2111,7 +2359,7 @@ export default function App() {
           const decodePromise = codeReaderRef.current.decodeFromVideoElement(
             videoRef.current,
             (result, err) => {
-              if (result && !escaneou) {
+              if (result) {
                 const txt = result.getText();
                 if (txt) onDetect(txt);
               }
@@ -2136,17 +2384,16 @@ export default function App() {
           });
 
           const scanLoop = async () => {
-            if (escaneou || !videoRef.current) return;
+            if (!videoRef.current) return;
             try {
               if (videoRef.current.readyState >= 2) {
                 const barcodes = await detector.detect(videoRef.current);
                 if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
                   onDetect(barcodes[0].rawValue);
-                  return;
                 }
               }
             } catch (e) {}
-            if (!escaneou) {
+            if (destinoLeitorRef.current === 'carrinho' || !escaneou) {
               requestAnimationFrame(scanLoop);
             }
           };
@@ -2164,6 +2411,8 @@ export default function App() {
   const fecharLeitor = () => {
     setLeitorAtivo(false);
     setProcessandoOCR(false);
+    setLanternaAtiva(false);
+    setUltimoItemScaneadoInfo(null);
     if (codeReaderRef.current) {
       try {
         codeReaderRef.current.reset();
@@ -4611,13 +4860,131 @@ export default function App() {
       </div>
 
       {/* CAMERA BARCODE SCANNER & AI VISION SCREEN */}
-      <div className="leitor-tela" id="tela-leitor" style={{ display: leitorAtivo ? 'flex' : 'none' }}>
-        <div id="video-container">
-          <video id="video-webcam" ref={videoRef} autoPlay playsInline muted></video>
+      <div className="leitor-tela" id="tela-leitor" style={{ display: leitorAtivo ? 'flex' : 'none', overflowY: 'auto' }}>
+        {/* CABEÇALHO DO LEITOR */}
+        <div style={{ textAlign: 'center', marginBottom: '10px', maxWidth: '420px', width: '100%' }}>
+          {destinoLeitor === 'carrinho' ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.2rem' }}>⚡</span>
+                <h3 style={{ color: '#38bdf8', fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
+                  Bipador Contínuo de Vendas (PDV)
+                </h3>
+              </div>
+              <p style={{ fontSize: '0.78rem', color: '#cbd5e1', margin: '4px 0 0 0' }}>
+                Bipe os produtos um atrás do outro. A câmera continua aberta e adiciona tudo ao carrinho!
+              </p>
+            </div>
+          ) : destinoLeitor === 'cadastro' ? (
+            <h3 style={{ color: '#38bdf8', fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>
+              📷 Escanear Código para Cadastro
+            </h3>
+          ) : destinoLeitor === 'lote' ? (
+            <h3 style={{ color: '#38bdf8', fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>
+              🤖 Leitor Inteligente de Lote & Validade (IA)
+            </h3>
+          ) : (
+            <h3 style={{ color: '#38bdf8', fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>
+              🔍 Leitor Óptico de Código de Barras
+            </h3>
+          )}
+        </div>
+
+        {/* FEED DA CÂMERA COM MIRA */}
+        <div id="video-container" style={{ position: 'relative', width: '100%', maxWidth: '380px', height: '240px' }}>
+          <video id="video-webcam" ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }}></video>
           <div className="mira-scanner">
             <div className="linha-laser"></div>
           </div>
         </div>
+
+        {/* FEEDBACK VISUAL INSTANTÂNEO DE PRODUTO BIPADO */}
+        {destinoLeitor === 'carrinho' && ultimoItemScaneadoInfo && (
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              marginTop: '10px',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              background: ultimoItemScaneadoInfo.status === 'sucesso' ? 'rgba(6, 95, 70, 0.92)' : 'rgba(153, 27, 27, 0.92)',
+              border: ultimoItemScaneadoInfo.status === 'sucesso' ? '2px solid #34d399' : '2px solid #f87171',
+              color: '#ffffff',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+              textAlign: 'center',
+              animation: 'fadeIn 0.2s ease',
+            }}
+          >
+            {ultimoItemScaneadoInfo.status === 'sucesso' ? (
+              <div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 800 }}>
+                  ✅ +1 {ultimoItemScaneadoInfo.nome}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#a7f3d0', marginTop: '2px' }}>
+                  R$ {ultimoItemScaneadoInfo.preco.toFixed(2)} | No Carrinho: <b>{ultimoItemScaneadoInfo.quantidadeNoCarrinho} un</b>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>
+                  ⚠️ {ultimoItemScaneadoInfo.nome}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#fecaca', marginTop: '2px' }}>
+                  {ultimoItemScaneadoInfo.mensagem}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PAINEL RESUMO DO CARRINHO EM TEMPO REAL DENTRO DO SCANNER */}
+        {destinoLeitor === 'carrinho' && (
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              marginTop: '10px',
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid #334155',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              color: '#ffffff',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+                🛒 Carrinho Atual
+              </div>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#38bdf8' }}>
+                {carrinho.reduce((a, b) => a + b.quantidade, 0)} itens | R$ {carrinho.reduce((a, b) => a + b.subtotal, 0).toFixed(2)}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                fecharLeitor();
+                setModalCarrinhoVisivel(true);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
+              }}
+            >
+              Finalizar Venda ➔
+            </button>
+          </div>
+        )}
 
         {destinoLeitor === 'lote' ? (
           <div style={{ textAlign: 'center', width: '100%', maxWidth: '380px', marginTop: '10px' }}>
@@ -4680,13 +5047,48 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : (
+        ) : destinoLeitor !== 'carrinho' ? (
           <p className="aviso-leitor">Aponte a câmera para o código de barras.</p>
-        )}
+        ) : null}
 
-        <button className="btn-fechar" onClick={fecharLeitor} style={{ marginTop: '12px' }}>
-          Fechar
-        </button>
+        {/* BOTÕES DE CONTROLE INFERIORES */}
+        <div style={{ display: 'flex', gap: '10px', marginTop: '12px', width: '100%', maxWidth: '380px', justifyContent: 'center' }}>
+          <button
+            type="button"
+            onClick={toggleLanterna}
+            style={{
+              background: lanternaAtiva ? '#f59e0b' : '#334155',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>{lanternaAtiva ? '💡' : '🔦'}</span>
+            <span>{lanternaAtiva ? 'Desligar Luz' : 'Lanterna'}</span>
+          </button>
+
+          <button
+            className="btn-fechar"
+            onClick={fecharLeitor}
+            style={{
+              margin: 0,
+              flex: 1,
+              padding: '10px',
+              fontSize: '0.9rem',
+              borderRadius: '8px',
+              fontWeight: 700,
+            }}
+          >
+            Fechar Câmera
+          </button>
+        </div>
       </div>
 
       {/* SUPERMARKET REGISTRATION & MANAGEMENT FULL SCREEN */}
@@ -6486,6 +6888,8 @@ export default function App() {
           setModalCaixaVisivel(true);
         }}
         obterFotoProduto={obterFotoProduto}
+        onAbrirLeitorCameraContinuo={abrirLeitorCarrinho}
+        ultimoItemBipadoToast={ultimoItemBipadoToast}
       />
 
       {/* MODAIS DE RELATÓRIO DE VENDAS E GRÁFICOS */}
