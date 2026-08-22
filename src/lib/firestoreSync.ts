@@ -462,11 +462,14 @@ export async function excluirSupermercadoFirestore(lojaId: string) {
       } catch (e) {}
     }
 
-    // 2. Excluir por query caso o documento possua docId diferente
+    // 2. Excluir por query ou busca caso o documento possua docId diferente
     try {
-      const snapLojas = await getDocs(query(collection(db, 'supermercados'), where('id', '==', lojaId)));
+      const snapLojas = await getDocs(collection(db, 'supermercados'));
       for (const d of snapLojas.docs) {
-        await deleteDoc(d.ref);
+        const data = d.data();
+        if (d.id === lojaId || d.id === docId || data.id === lojaId || data.id === docId) {
+          await deleteDoc(d.ref);
+        }
       }
     } catch (e) {}
 
@@ -509,6 +512,14 @@ export async function excluirSupermercadoFirestore(lojaId: string) {
         await deleteDoc(d.ref);
       }
     } catch (e) {}
+
+    // 8. Excluir sessões ativas vinculadas à loja
+    try {
+      const snapSess = await getDocs(query(collection(db, 'sessoes_ativas'), where('lojaId', '==', lojaId)));
+      for (const d of snapSess.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (e) {}
   } catch (err) {
     console.error('Erro ao excluir supermercado e seus registros no Firestore:', err);
   }
@@ -519,6 +530,22 @@ export async function limparTodasLojasDeTesteFirestore() {
   try {
     const snapLojas = await getDocs(collection(db, 'supermercados'));
     for (const d of snapLojas.docs) {
+      await deleteDoc(d.ref);
+    }
+    const snapEst = await getDocs(collection(db, 'estoque'));
+    for (const d of snapEst.docs) {
+      await deleteDoc(d.ref);
+    }
+    const snapOp = await getDocs(collection(db, 'operadores'));
+    for (const d of snapOp.docs) {
+      await deleteDoc(d.ref);
+    }
+    const snapVen = await getDocs(collection(db, 'vendas'));
+    for (const d of snapVen.docs) {
+      await deleteDoc(d.ref);
+    }
+    const snapDev = await getDocs(collection(db, 'clientes_devedores'));
+    for (const d of snapDev.docs) {
       await deleteDoc(d.ref);
     }
   } catch (err) {

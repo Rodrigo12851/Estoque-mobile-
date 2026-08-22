@@ -108,6 +108,22 @@ export interface SessaoAtivaDoc {
   dispositivoInfo?: string;
 }
 
+export interface ItemCarrinho {
+  id: string; // Ex: `${codigo}_${validade}_${lote}`
+  codigo: string;
+  nome: string;
+  marca?: string;
+  categoria?: string;
+  quantidade: number;
+  preco_unitario: number;
+  preco_custo?: number;
+  subtotal: number;
+  lote: string;
+  validade: string;
+  foto?: string;
+  estoqueDisponivel: number;
+}
+
 export interface VendaItem {
   codigo: string;
   nome: string;

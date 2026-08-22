@@ -5,6 +5,7 @@ import {
   VendaItem,
   ProdutoCatalogo,
   ItemEstoque,
+  ItemCarrinho,
   PermissoesLoja,
   PermissoesOperador,
   OperadorCaixa,
@@ -17,6 +18,7 @@ import {
   PERMISSOES_CAIXA_PADRAO,
   PERMISSOES_ADMIN_PADRAO,
 } from './types';
+import { CarrinhoVendaModal } from './components/CarrinhoVendaModal';
 import { RelatorioVendasModal } from './components/RelatorioVendasModal';
 import { GraficosVendasModal } from './components/GraficosVendasModal';
 import { CupomVendaModal } from './components/CupomVendaModal';
@@ -335,12 +337,26 @@ export default function App() {
   const [fotoTemp, setFotoTemp] = useState<string>('');
   const [msgCad, setMsgCad] = useState<React.ReactNode>('');
 
-  // Stock Sale/Markdown Modal
+  // Stock Sale/Markdown Modal & Multi-Item Cart
   const [prodAtual, setProdAtual] = useState<ItemEstoque | null>(null);
   const [qtdBaixa, setQtdBaixa] = useState<number | string>(1);
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix' | 'fiado'>('pix');
   const [clienteFiadoSelecionadoId, setClienteFiadoSelecionadoId] = useState<string>('');
   const [msgVenda, setMsgVenda] = useState<React.ReactNode>('');
+
+  // Multi-Item Shopping Cart (Carrinho de Vendas Múltiplas)
+  const [modalCarrinhoVisivel, setModalCarrinhoVisivel] = useState<boolean>(() => {
+    return telaSalvaInicial === 'modal_carrinho';
+  });
+  const [carrinho, setCarrinho] = useState<ItemCarrinho[]>(() => {
+    try {
+      const storeId = localStorage.getItem('supermercadoAtualId') || 'loja_matriz_01';
+      const salvo = localStorage.getItem(`carrinho_vendas_${storeId}`);
+      return salvo ? JSON.parse(salvo) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Debtors / Fiado Management States
   const [modalDevedoresVisivel, setModalDevedoresVisivel] = useState<boolean>(() => {
@@ -3160,6 +3176,269 @@ export default function App() {
     }, 700);
   };
 
+  // ==========================================
+  // SHOPPING CART FUNCTIONS (CARRINHO DE COMPRAS)
+  // ==========================================
+
+  const salvarCarrinho = (novoCarrinho: ItemCarrinho[]) => {
+    setCarrinho(novoCarrinho);
+    safeLocalStorageSet(`carrinho_vendas_${supermercadoAtual}`, JSON.stringify(novoCarrinho));
+  };
+
+  const adicionarAoCarrinho = (item: ItemEstoque, quantidade: number = 1) => {
+    if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+      alert(
+        '⚠️ O Caixa está FECHADO!\n\nPara realizar vendas e adicionar itens ao carrinho, é obrigatório abrir o turno do caixa primeiro (informando o troco inicial).'
+      );
+      setModalCaixaVisivel(true);
+      return;
+    }
+
+    if (quantidade < 1) return;
+
+    const itemId = `${item.codigo}_${item.validade}_${item.lote}`;
+    const itemExistenteIndex = carrinho.findIndex((c) => c.id === itemId);
+
+    let novoCarrinho = [...carrinho];
+
+    if (itemExistenteIndex >= 0) {
+      const itemAtual = novoCarrinho[itemExistenteIndex];
+      const novaQtd = itemAtual.quantidade + quantidade;
+
+      if (novaQtd > item.quantidade) {
+        alert(
+          `⚠️ Quantidade limite atingida!\nO estoque disponível deste lote é de ${item.quantidade} un. Você já colocou ${itemAtual.quantidade} un no carrinho.`
+        );
+        return;
+      }
+
+      novoCarrinho[itemExistenteIndex] = {
+        ...itemAtual,
+        quantidade: novaQtd,
+        subtotal: novaQtd * itemAtual.preco_unitario,
+        estoqueDisponivel: item.quantidade,
+      };
+    } else {
+      if (quantidade > item.quantidade) {
+        alert(`⚠️ Quantidade solicitada (${quantidade}) é maior que o estoque disponível (${item.quantidade} un).`);
+        return;
+      }
+
+      const novoItemCarrinho: ItemCarrinho = {
+        id: itemId,
+        codigo: item.codigo,
+        nome: item.nome,
+        marca: item.marca,
+        categoria: item.categoria,
+        quantidade: quantidade,
+        preco_unitario: item.preco_venda,
+        preco_custo: item.preco_custo,
+        subtotal: quantidade * item.preco_venda,
+        lote: item.lote,
+        validade: item.validade,
+        foto: item.foto,
+        estoqueDisponivel: item.quantidade,
+      };
+      novoCarrinho.push(novoItemCarrinho);
+    }
+
+    salvarCarrinho(novoCarrinho);
+    tocarBeepCaixa();
+  };
+
+  const alterarQuantidadeCarrinho = (itemId: string, novaQtd: number) => {
+    if (novaQtd <= 0) {
+      removerItemCarrinho(itemId);
+      return;
+    }
+
+    const novoCarrinho = carrinho.map((c) => {
+      if (c.id === itemId) {
+        const qtdAjustada = Math.min(novaQtd, c.estoqueDisponivel);
+        return {
+          ...c,
+          quantidade: qtdAjustada,
+          subtotal: qtdAjustada * c.preco_unitario,
+        };
+      }
+      return c;
+    });
+
+    salvarCarrinho(novoCarrinho);
+  };
+
+  const removerItemCarrinho = (itemId: string) => {
+    const novoCarrinho = carrinho.filter((c) => c.id !== itemId);
+    salvarCarrinho(novoCarrinho);
+  };
+
+  const limparCarrinho = () => {
+    salvarCarrinho([]);
+  };
+
+  // FINALIZAR VENDA COMPLETA DO CARRINHO (MÚLTIPLOS PRODUTOS DE UMA VEZ)
+  const finalizarVendaCarrinho = (
+    formaPagamentoVenda: 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix' | 'fiado',
+    clienteFiadoIdEscolhido?: string
+  ) => {
+    if (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') {
+      alert('⚠️ Caixa fechado! Abra o turno de caixa antes de concluir a venda.');
+      setModalCaixaVisivel(true);
+      return;
+    }
+
+    if (carrinho.length === 0) {
+      alert('⚠️ Carrinho vazio!');
+      return;
+    }
+
+    // 1. Validar estoques de todos os itens do carrinho antes de processar
+    for (const itemCar of carrinho) {
+      const itemEst = estoque.find(
+        (p) => p.codigo === itemCar.codigo && p.validade === itemCar.validade && p.lote === itemCar.lote
+      );
+      if (!itemEst || itemCar.quantidade > itemEst.quantidade) {
+        alert(
+          `⚠️ Estoque insuficiente para o produto "${itemCar.nome}"!\nDisponível: ${itemEst ? itemEst.quantidade : 0} un | No carrinho: ${itemCar.quantidade} un.`
+        );
+        return;
+      }
+    }
+
+    // 2. Se for fiado, validar cliente
+    let clienteFiadoEncontrado: ClienteDevedor | undefined = undefined;
+    const valorTotalCarrinho = carrinho.reduce((acc, it) => acc + it.subtotal, 0);
+
+    if (formaPagamentoVenda === 'fiado') {
+      if (!clienteFiadoIdEscolhido) {
+        alert('Selecione um cliente cadastrado para registrar a compra em fiado.');
+        return;
+      }
+      clienteFiadoEncontrado = clientesDevedores.find((c) => c.id === clienteFiadoIdEscolhido);
+      if (!clienteFiadoEncontrado) {
+        alert('Cliente fiado não encontrado!');
+        return;
+      }
+    }
+
+    // 3. Atualizar estoque de cada item vendido
+    let novoEstoque = [...estoque];
+
+    for (const itemCar of carrinho) {
+      const idx = novoEstoque.findIndex(
+        (p) => p.codigo === itemCar.codigo && p.validade === itemCar.validade && p.lote === itemCar.lote
+      );
+      if (idx >= 0) {
+        const novaQtd = novoEstoque[idx].quantidade - itemCar.quantidade;
+        if (novaQtd <= 0) {
+          const itemRemovido = novoEstoque[idx];
+          novoEstoque.splice(idx, 1);
+          excluirItemEstoqueFirestore(itemRemovido.codigo, itemRemovido.validade, itemRemovido.lote, supermercadoAtual).catch(
+            (err) => console.warn('Aviso ao excluir item no Firestore:', err)
+          );
+        } else {
+          novoEstoque[idx] = { ...novoEstoque[idx], quantidade: novaQtd };
+          salvarItemEstoqueFirestore(novoEstoque[idx], supermercadoAtual).catch((err) =>
+            console.warn('Aviso ao atualizar estoque no Firestore:', err)
+          );
+        }
+      }
+    }
+
+    // 4. Determinar operador
+    const opAtivo = listaOperadores.find((op) => op.id === operadorAtivoId);
+    const nomeOperador = opAtivo ? opAtivo.nome : 'Administrador do Supermercado';
+
+    // 5. Criar itens da Venda
+    const itensVenda: VendaItem[] = carrinho.map((c) => ({
+      codigo: c.codigo,
+      nome: c.nome,
+      quantidade: c.quantidade,
+      preco_unitario: c.preco_unitario,
+      preco_custo: c.preco_custo,
+      subtotal: c.subtotal,
+      lote: c.lote,
+      validade: c.validade,
+      foto: c.foto,
+    }));
+
+    const novaVenda: Venda = {
+      id: 'ven_' + Date.now(),
+      lojaId: supermercadoAtual,
+      data: new Date().toISOString().slice(0, 10),
+      hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now(),
+      operadorId: operadorAtivoId || 'admin',
+      operadorNome: nomeOperador,
+      itens: itensVenda,
+      valorTotal: valorTotalCarrinho,
+      formaPagamento: formaPagamentoVenda,
+      status: 'concluida',
+    };
+
+    // 6. Atualizar Caderneta de Fiado caso aplicável
+    if (formaPagamentoVenda === 'fiado' && clienteFiadoEncontrado) {
+      novaVenda.clienteFiadoId = clienteFiadoEncontrado.id;
+      novaVenda.clienteFiadoNome = clienteFiadoEncontrado.nome;
+
+      const novaCompraFiado: CompraFiado = {
+        id: 'comp_' + Date.now(),
+        vendaId: novaVenda.id,
+        data: novaVenda.data,
+        hora: novaVenda.hora,
+        timestamp: novaVenda.timestamp,
+        valorTotal: valorTotalCarrinho,
+        valorPago: 0,
+        saldoRestante: valorTotalCarrinho,
+        itens: novaVenda.itens,
+        operadorNome: nomeOperador,
+        status: 'pendente',
+      };
+
+      const clienteAtualizado: ClienteDevedor = {
+        ...clienteFiadoEncontrado,
+        saldoDevedorTotal: clienteFiadoEncontrado.saldoDevedorTotal + valorTotalCarrinho,
+        compras: [novaCompraFiado, ...(clienteFiadoEncontrado.compras || [])],
+      };
+
+      const novosClientes = clientesDevedores.map((c) => (c.id === clienteAtualizado.id ? clienteAtualizado : c));
+      setClientesDevedores(novosClientes);
+      safeLocalStorageSet(`clientes_devedores_${supermercadoAtual}`, JSON.stringify(novosClientes));
+      salvarClienteDevedorFirestore(clienteAtualizado);
+    }
+
+    // 7. Salvar Vendas
+    const novasVendas = [novaVenda, ...vendas];
+    setVendas(novasVendas);
+    safeLocalStorageSet(`vendas_${supermercadoAtual}`, JSON.stringify(novasVendas));
+
+    // Offline / Firestore sync
+    if (!navigator.onLine) {
+      adicionarVendaFilaOffline(novaVenda);
+      setVendasPendentesCount(obterVendasPendentesOffline().length);
+    } else {
+      salvarVendaFirestore(novaVenda).catch(() => {
+        adicionarVendaFilaOffline(novaVenda);
+        setVendasPendentesCount(obterVendasPendentesOffline().length);
+      });
+    }
+
+    registrarLogAuditoria(
+      'Venda com Carrinho Concluída',
+      `Venda ${novaVenda.id} com ${novaVenda.itens.length} produto(s) no total de R$ ${novaVenda.valorTotal.toFixed(2)} (${novaVenda.formaPagamento.toUpperCase()}) por ${nomeOperador}`
+    );
+
+    // 8. Aplicar novo estoque, limpar carrinho e abrir cupom
+    setEstoque(novoEstoque);
+    safeLocalStorageSet(`estoque_${supermercadoAtual}`, JSON.stringify(novoEstoque));
+    limparCarrinho();
+    tocarSomSucessoVenda();
+    notificarSincronizacao();
+
+    setModalCarrinhoVisivel(false);
+    setVendaCupomVer(novaVenda);
+  };
+
   // Sales Reversal (Estorno) Handler
   const handleEstornarVenda = (vendaId: string, motivo: string) => {
     const vendaIndex = vendas.findIndex((v) => v.id === vendaId);
@@ -3445,6 +3724,49 @@ export default function App() {
               </button>
             )}
 
+            {/* BOTÃO DO CARRINHO DE COMPRAS COM CONTADOR */}
+            <button
+              className="btn btn-carrinho-header"
+              onClick={() => setModalCarrinhoVisivel(true)}
+              title={`Ver Carrinho de Compras (${carrinho.reduce((a, b) => a + b.quantidade, 0)} itens)`}
+              style={{
+                background: carrinho.length > 0 ? '#0f766e' : 'rgba(255, 255, 255, 0.18)',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                border: carrinho.length > 0 ? '1.5px solid #2dd4bf' : '1px solid rgba(255, 255, 255, 0.3)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                position: 'relative',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span style={{ fontSize: '1rem' }}>🛒</span>
+              <span className="texto-carrinho-header" style={{ display: 'inline' }}>
+                Carrinho
+              </span>
+              {carrinho.length > 0 && (
+                <span
+                  style={{
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '0.72rem',
+                    fontWeight: 900,
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                    marginLeft: '2px',
+                    border: '1px solid #ffffff',
+                  }}
+                >
+                  {carrinho.reduce((a, b) => a + b.quantidade, 0)}
+                </span>
+              )}
+            </button>
+
             <button className="btn btn-cam" onClick={abrirLeitorGeral} title="Escanear Código">
               📷
             </button>
@@ -3550,6 +3872,17 @@ export default function App() {
           </button>
         </div>
         <div className="sidebar-menu">
+          <div
+            className="sidebar-item"
+            style={{ fontWeight: 700, background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', borderRadius: '6px' }}
+            onClick={() => {
+              setModalCarrinhoVisivel(true);
+              fecharMenu();
+            }}
+          >
+            🛒 Carrinho de Vendas Multi-Itens ({carrinho.reduce((a, b) => a + b.quantidade, 0)} itens)
+          </div>
+
           {(temPermissaoOperador('inteligencia_estoque', 'inteligencia_estoque') ||
             temPermissaoOperador('cadastrar_produtos', 'estoque')) && (
             <div
@@ -3913,6 +4246,12 @@ export default function App() {
                   const primeiraValidade = loteValido?.validade || p.lotes[0]?.validade || '';
                   const primeiroLote = loteValido?.lote || p.lotes[0]?.lote || '';
                   const fotoCard = obterFotoProduto(p.codigo, p.foto);
+                  const itemCompleto = estoque.find(
+                    (it) => it.codigo === p.codigo && it.validade === primeiraValidade && it.lote === primeiroLote
+                  ) || estoque.find((it) => it.codigo === p.codigo);
+                  const qtdNoCarrinho = carrinho
+                    .filter((c) => c.codigo === p.codigo)
+                    .reduce((acc, c) => acc + c.quantidade, 0);
 
                   return (
                     <div className="card-produto" key={p.codigo}>
@@ -3921,6 +4260,24 @@ export default function App() {
                         onClick={() => abrirVenda(p.codigo, primeiraValidade, primeiroLote)}
                       >
                         {fotoCard ? <img src={fotoCard} alt={p.nome} /> : 'Sem imagem'}
+                        {qtdNoCarrinho > 0 && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '6px',
+                              right: '6px',
+                              background: '#16a34a',
+                              color: '#fff',
+                              borderRadius: '12px',
+                              padding: '2px 7px',
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                            }}
+                          >
+                            🛒 {qtdNoCarrinho} no carrinho
+                          </div>
+                        )}
                       </div>
                       <div className="info-card">
                         <div>
@@ -3936,7 +4293,35 @@ export default function App() {
                           <div className="detalhe">
                             Estoque Total: <b>{p.qtdTotal} un</b>
                           </div>
-                          <div className="detalhe preco-destaque">R$ {p.preco_venda.toFixed(2)}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                            <div className="detalhe preco-destaque">R$ {p.preco_venda.toFixed(2)}</div>
+                            {itemCompleto && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adicionarAoCarrinho(itemCompleto, 1);
+                                }}
+                                title="Adicionar 1 unidade ao Carrinho de Vendas"
+                                style={{
+                                  background: '#e0f2fe',
+                                  color: '#0369a1',
+                                  border: '1px solid #7dd3fc',
+                                  borderRadius: '6px',
+                                  padding: '4px 8px',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                }}
+                              >
+                                <span>🛒</span>
+                                <span>+ Carrinho</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -5933,19 +6318,55 @@ export default function App() {
                 </div>
               )}
 
-              <div className="grupo-botoes">
+              <div className="grupo-botoes" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      flex: 1,
+                      background: '#0284c7',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px',
+                    }}
+                    onClick={() => {
+                      const qtd = typeof qtdBaixa === 'number' ? qtdBaixa : parseInt(qtdBaixa, 10) || 1;
+                      adicionarAoCarrinho(prodAtual, qtd);
+                      setModalVendaVisivel(false);
+                      setModalCarrinhoVisivel(true);
+                    }}
+                  >
+                    <span>🛒</span>
+                    <span>Colocar no Carrinho</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-salvar"
+                    style={{
+                      flex: 1,
+                      background: (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') ? '#94a3b8' : 'var(--sucesso)',
+                      cursor: (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') ? 'not-allowed' : 'pointer',
+                    }}
+                    disabled={!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto'}
+                    onClick={confirmarBaixa}
+                  >
+                    ⚡ Baixar Só Este Item
+                  </button>
+                </div>
                 <button
-                  className="btn btn-salvar"
-                  style={{
-                    background: (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') ? '#94a3b8' : 'var(--sucesso)',
-                    cursor: (!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto') ? 'not-allowed' : 'pointer',
-                  }}
-                  disabled={!sessaoCaixaAtiva || sessaoCaixaAtiva.status !== 'aberto'}
-                  onClick={confirmarBaixa}
+                  type="button"
+                  className="btn btn-cancelar"
+                  style={{ width: '100%' }}
+                  onClick={() => setModalVendaVisivel(false)}
                 >
-                  Finalizar Venda / Baixar
-                </button>
-                <button className="btn btn-cancelar" onClick={() => setModalVendaVisivel(false)}>
                   Cancelar
                 </button>
               </div>
@@ -6041,6 +6462,31 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* MODAL DE CARRINHO DE COMPRAS / BAIXA MÚLTIPLA */}
+      <CarrinhoVendaModal
+        visivel={modalCarrinhoVisivel}
+        onFechar={() => setModalCarrinhoVisivel(false)}
+        carrinho={carrinho}
+        estoqueDisponivel={estoque}
+        onAlterarQuantidade={alterarQuantidadeCarrinho}
+        onRemoverItem={removerItemCarrinho}
+        onLimparCarrinho={limparCarrinho}
+        onAdicionarOutroProduto={() => setModalCarrinhoVisivel(false)}
+        onFinalizarVenda={finalizarVendaCarrinho}
+        onAdicionarItemRapido={(item) => adicionarAoCarrinho(item, 1)}
+        clientesDevedores={clientesDevedores}
+        onAbrirCadastroCliente={() => {
+          setModalCarrinhoVisivel(false);
+          setModalDevedoresVisivel(true);
+        }}
+        sessaoCaixaAberta={!!(sessaoCaixaAtiva && sessaoCaixaAtiva.status === 'aberto')}
+        onAbrirCaixaModal={() => {
+          setModalCarrinhoVisivel(false);
+          setModalCaixaVisivel(true);
+        }}
+        obterFotoProduto={obterFotoProduto}
+      />
 
       {/* MODAIS DE RELATÓRIO DE VENDAS E GRÁFICOS */}
       <RelatorioVendasModal

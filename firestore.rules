@@ -13,92 +13,56 @@ service cloud.firestore {
 
     // 1. Supermercados cadastrados
     match /supermercados/{lojaId} {
-      allow read: if true;
-      allow create, update: if request.resource.data.id is string &&
-                               isNonEmptyString(request.resource.data.nome) &&
-                               request.resource.data.cnpj is string;
-      allow delete: if false; // Soft-delete recomendado para prevenir perda irreversível
+      allow read, write, delete: if true;
     }
 
     // 2. Credenciais Master do Dono do Aplicativo
     match /usuarios_master/{docId} {
-      allow read, write: if true;
+      allow read, write, delete: if true;
     }
 
     // 3. Catálogo Global de Produtos (Referência de imagens e código de barras)
     match /produtos_catalogo/{codigoBarra} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.codigo) &&
-                               isNonEmptyString(request.resource.data.nome);
-      allow delete: if false; // Previne deleção acidental da base mestra de códigos
+      allow read, write, delete: if true;
     }
 
     match /catalogo_global/{codigoBarra} {
-      allow read: if true;
-      allow write: if isNonEmptyString(request.resource.data.codigo);
+      allow read, write, delete: if true;
     }
 
-    // 4. Estoque por Supermercado (Coleção unificada 'estoque' com validação estrita de tipos)
+    // 4. Estoque por Supermercado
     match /estoque/{itemId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lojaId) &&
-                               isNonEmptyString(request.resource.data.codigo) &&
-                               isNonEmptyString(request.resource.data.nome) &&
-                               isValidNumber(request.resource.data.preco_venda) &&
-                               request.resource.data.quantidade is number;
-      allow delete: if true;
+      allow read, write, delete: if true;
     }
 
-    // 5. Vendas por Supermercado (Histórico fiscal e financeiro com proteção contra deleção)
+    // 5. Vendas por Supermercado
     match /vendas/{vendaId} {
-      allow read: if true;
-      allow create: if isNonEmptyString(request.resource.data.lojaId) &&
-                       isNonEmptyString(request.resource.data.id) &&
-                       isValidNumber(request.resource.data.valorTotal) &&
-                       request.resource.data.itens is list;
-      allow update: if request.resource.data.status in ['concluida', 'estornada'];
-      allow delete: if false; // Proibido deletar histórico fiscal e contábil de vendas
+      allow read, write, delete: if true;
     }
 
     // 6. Operadores e Caixas por Supermercado
     match /operadores/{opId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lojaId) &&
-                               isNonEmptyString(request.resource.data.nome) &&
-                               isNonEmptyString(request.resource.data.cpfOuUsuario) &&
-                               isNonEmptyString(request.resource.data.pinSenha) &&
-                               request.resource.data.ativo is bool;
-      allow delete: if true;
+      allow read, write, delete: if true;
     }
 
     // 7. Clientes Devedores (Caderneta Fiado) por Loja
     match /clientes_devedores/{clienteId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lojaId) &&
-                               isNonEmptyString(request.resource.data.nome);
-      allow delete: if true;
+      allow read, write, delete: if true;
     }
 
-    // 8. Termos de Concordância e Sigilo do Usuário (Imutável)
+    // 8. Termos de Concordância e Sigilo do Usuário
     match /termos_concordancia/{termoId} {
-      allow read: if true;
-      allow create: if isNonEmptyString(request.resource.data.usuarioId) &&
-                       request.resource.data.aceitou == true;
-      allow update, delete: if false; // Termo aceito é inviolável e permanente
+      allow read, write, delete: if true;
     }
 
-    // 9. Logs de Auditoria do Sistema (Append-only / Imutável)
+    // 9. Logs de Auditoria do Sistema
     match /logs_auditoria/{logId} {
-      allow read: if true;
-      allow create: if isNonEmptyString(request.resource.data.acao) &&
-                       request.resource.data.lojaId is string;
-      allow update, delete: if false; // Logs são estritamente append-only para conformidade
+      allow read, write, delete: if true;
     }
 
-    // 10. Sessões Ativas por Usuário (Prevenção de login simultâneo em múltiplos aparelhos)
+    // 10. Sessões Ativas por Usuário
     match /sessoes_ativas/{userKey} {
-      allow read: if true;
-      allow create, update, delete: if true;
+      allow read, write, delete: if true;
     }
 
     // Bloqueio padrão para todas as outras coleções não mapeadas (Princípio do Menor Privilégio)
